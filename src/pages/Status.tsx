@@ -4,6 +4,7 @@ import Icon from '@/components/ui/icon';
 import { API, formatDate, hourLabel, BOT_URL } from '@/lib/api';
 import EditAd from '@/components/site/EditAd';
 import RenewPlan from '@/components/site/RenewPlan';
+import EditWindow from '@/components/site/EditWindow';
 
 interface StatusData {
   id: number;
@@ -290,6 +291,14 @@ const Status = () => {
             </span>
           </div>
         )}
+
+        <EditWindow
+          startHour={data.pref_start_hour}
+          endHour={data.pref_end_hour}
+          tzOffset={data.tz_offset}
+          busy={busy}
+          onSave={act}
+        />
 
         {c && (
           <RenewPlan

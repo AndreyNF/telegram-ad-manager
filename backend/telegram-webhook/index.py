@@ -4,6 +4,7 @@ import os
 import psycopg2
 
 from telegram_client import call as call_telegram
+import draft as ad_draft
 
 
 CORS_HEADERS = {
@@ -150,6 +151,7 @@ def setup_commands() -> None:
     token = os.environ['TELEGRAM_BOT_TOKEN']
     call_telegram(token, 'setMyCommands', {
         'commands': json.dumps([
+            {'command': 'post', 'description': 'Подать объявление'},
             {'command': 'cabinet', 'description': 'Личный кабинет объявления'},
             {'command': 'start', 'description': 'Начать работу с ботом'},
         ]),
@@ -206,6 +208,31 @@ def handler(event: dict, context) -> dict:
 
     schema = os.environ.get('MAIN_DB_SCHEMA', 'public')
     update = json.loads(event.get('body') or '{}')
+
+    callback = update.get('callback_query')
+    if callback:
+        cb_user = callback.get('from') or {}
+        cb_chat = ((callback.get('message') or {}).get('chat') or {})
+        cb_id = cb_chat.get('id')
+        cb_data = callback.get('data') or ''
+        try:
+            call_telegram(os.environ['TELEGRAM_BOT_TOKEN'], 'answerCallbackQuery',
+                          {'callback_query_id': callback.get('id')}, budget=3.0)
+        except Exception:
+            pass
+        if cb_id and cb_data.startswith('draft:') and cb_user.get('username'):
+            try:
+                ad_draft.handle_callback(schema, cb_id, cb_data,
+                                         cb_user['username'], cb_user.get('first_name', ''))
+            except Exception:
+                pass
+        return {
+            'statusCode': 200,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({'ok': True}),
+            'isBase64Encoded': False,
+        }
+
     message = (
         update.get('message')
         or update.get('edited_message')
@@ -249,10 +276,44 @@ def handler(event: dict, context) -> dict:
         except Exception:
             pass
 
-        text = (message.get('text') or '').strip()
+        text = (message.get('text') or message.get('caption') or '').strip()
         lower = text.lower()
 
+        photos = message.get('photo') or []
+        photo_fid = ''
+        if photos:
+            best = max(photos, key=lambda p: p.get('file_size') or 0)
+            photo_fid = best.get('file_id') or ''
+
+        wants_post = (
+            lower.startswith('/post')
+            or lower.startswith('/new')
+            or lower in ('подать объявление', 'новое объявление', 'разместить')
+        )
+
+        if wants_post:
+            try:
+                ad_draft.start_draft(schema, chat_id)
+            except Exception:
+                pass
+            return {
+                'statusCode': 200,
+                'headers': CORS_HEADERS,
+                'body': json.dumps({'ok': True}),
+                'isBase64Encoded': False,
+            }
+
         if text and not text.startswith('/'):
+            try:
+                if ad_draft.handle_text(schema, chat_id, text, photo_fid):
+                    return {
+                        'statusCode': 200,
+                        'headers': CORS_HEADERS,
+                        'body': json.dumps({'ok': True}),
+                        'isBase64Encoded': False,
+                    }
+            except Exception:
+                pass
             try:
                 save_incoming(schema, chat_id, text)
             except Exception:
@@ -276,8 +337,9 @@ def handler(event: dict, context) -> dict:
                 call_telegram(token, 'sendMessage', {
                     'chat_id': chat_id,
                     'text': 'Готово! Здесь вы будете получать уведомления по объявлению.\n\n'
-                            'Команда /cabinet — вход в личный кабинет: там можно изменить '
-                            'текст и фото, поставить показы на паузу и посмотреть статистику.',
+                            '/post — подать объявление прямо здесь, без захода на сайт.\n'
+                            '/cabinet — личный кабинет: изменить текст и фото, поставить '
+                            'показы на паузу, продлить тариф и посмотреть статистику.',
                 })
                 setup_commands()
                 send_cabinet(schema, chat_id)

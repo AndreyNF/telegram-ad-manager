@@ -192,6 +192,28 @@ def handler(event: dict, context) -> dict:
                 notify_admin_edit(row[1], row[0])
                 return json_response(200, {'ok': True})
 
+            if action == 'set_window':
+                start = body.get('start_hour')
+                end = body.get('end_hour')
+                if not isinstance(start, int) or not 0 <= start <= 23:
+                    return json_response(400, {'error': 'Неверное время начала'})
+                if not isinstance(end, int) or not 0 <= end <= 23:
+                    return json_response(400, {'error': 'Неверное время окончания'})
+                if start == end:
+                    return json_response(400, {'error': 'Начало и конец не могут совпадать'})
+
+                cur.execute(
+                    f"UPDATE {schema}.ad_requests SET pref_start_hour = {start}, "
+                    f"pref_end_hour = {end} WHERE id = {int(row[0])}"
+                )
+                if campaign_id:
+                    cur.execute(
+                        f"UPDATE {schema}.campaigns SET window_start_hour = {start}, "
+                        f"window_end_hour = {end}, next_run_at = CURRENT_TIMESTAMP "
+                        f"WHERE id = {int(campaign_id)}"
+                    )
+                return json_response(200, {'ok': True})
+
             if action == 'renew':
                 plan = (body.get('plan') or '').strip().lower()
                 if plan not in PLANS:
