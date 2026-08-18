@@ -154,6 +154,7 @@ const Admin = () => {
     edits: requests.filter((r) => r.pending).length,
     running: requests.filter((r) => r.campaign?.state === 'running').length,
     posts: requests.reduce((sum, r) => sum + (r.campaign?.posts_sent || 0), 0),
+    revenue: requests.reduce((sum, r) => sum + (r.total_paid || 0), 0),
   };
 
   return (
@@ -234,11 +235,12 @@ const Admin = () => {
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { label: 'Новых заявок', value: stats.newCount, icon: 'Inbox' },
             { label: 'Активных откруток', value: stats.running, icon: 'Radio' },
             { label: 'Всего публикаций', value: stats.posts, icon: 'Send' },
+            { label: 'Оплачено, ₽', value: stats.revenue, icon: 'Wallet' },
           ].map((s) => (
             <div key={s.label} className="card flex items-center justify-between">
               <div>

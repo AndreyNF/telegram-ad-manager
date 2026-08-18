@@ -15,25 +15,34 @@ CORS_HEADERS = {
 }
 
 
-def save_user(schema: str, username: str, chat_id: int) -> None:
-    """Запоминает chat_id пользователя, чтобы бот мог писать ему в личку"""
+def save_user(schema: str, username: str, chat_id: int, first_name: str = '') -> None:
+    """Запоминает chat_id и имя пользователя, чтобы бот мог писать ему в личку"""
     conn = psycopg2.connect(os.environ['DATABASE_URL'])
     conn.autocommit = True
     cur = conn.cursor()
     safe_username = username.lower().replace("'", "''")
+    safe_name = (first_name or '').replace("'", "''")[:120]
     cur.execute(
-        f"INSERT INTO {schema}.telegram_users (username, chat_id, updated_at) "
-        f"VALUES ('{safe_username}', '{chat_id}', CURRENT_TIMESTAMP) "
+        f"INSERT INTO {schema}.telegram_users (username, chat_id, first_name, updated_at) "
+        f"VALUES ('{safe_username}', '{chat_id}', '{safe_name}', CURRENT_TIMESTAMP) "
         f"ON CONFLICT (username) DO UPDATE SET chat_id = EXCLUDED.chat_id, "
+        f"first_name = COALESCE(NULLIF(EXCLUDED.first_name, ''), {schema}.telegram_users.first_name), "
         f"updated_at = CURRENT_TIMESTAMP"
     )
     compact = safe_username.replace('_', '').replace('.', '').replace('-', '')
     cur.execute(
-        f"UPDATE {schema}.ad_requests SET client_chat_id = '{chat_id}' "
+        f"UPDATE {schema}.ad_requests SET client_chat_id = '{chat_id}', "
+        f"client_username = '{safe_username}', "
+        f"client_name = COALESCE(NULLIF(client_name, ''), NULLIF('{safe_name}', '')) "
         f"WHERE client_chat_id IS NULL AND ("
         f"  lower(ltrim(contact, '@')) = '{safe_username}' OR "
         f"  replace(replace(replace(lower(ltrim(contact, '@')), '_', ''), '.', ''), '-', '') "
         f"    = '{compact}')"
+    )
+    cur.execute(
+        f"UPDATE {schema}.ad_requests SET client_username = '{safe_username}', "
+        f"client_name = COALESCE(NULLIF(client_name, ''), NULLIF('{safe_name}', '')) "
+        f"WHERE client_chat_id = '{chat_id}' AND client_username IS NULL"
     )
     cur.close()
     conn.close()
@@ -214,7 +223,7 @@ def handler(event: dict, context) -> dict:
 
     if username and chat_id and chat_type == 'private':
         try:
-            save_user(schema, username, chat_id)
+            save_user(schema, username, chat_id, from_user.get('first_name', ''))
         except Exception:
             pass
 

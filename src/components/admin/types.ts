@@ -9,6 +9,9 @@ export interface Campaign {
   window_start_hour: number;
   window_end_hour: number;
   paused_until: string | null;
+  price_amount: number | null;
+  paid_at: string | null;
+  days_paid: number | null;
 }
 
 export interface AdRequest {
@@ -25,6 +28,9 @@ export interface AdRequest {
   client_notified: boolean;
   can_write: boolean;
   pending: PendingEdit | null;
+  client_name: string | null;
+  client_username: string | null;
+  total_paid: number;
   campaign: Campaign | null;
 }
 

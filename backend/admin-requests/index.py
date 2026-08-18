@@ -19,6 +19,15 @@ def esc(value) -> str:
     return str(value or '').replace("'", "''")
 
 
+def money(value) -> float:
+    """Приводит сумму оплаты к числу, отсекая мусор"""
+    try:
+        amount = float(str(value).replace(',', '.').strip())
+    except (TypeError, ValueError):
+        return 0.0
+    return round(amount, 2) if 0 < amount < 10_000_000 else 0.0
+
+
 def json_response(status: int, payload: dict) -> dict:
     return {
         'statusCode': status,
@@ -34,9 +43,12 @@ def list_data(cur, schema: str) -> dict:
         f"SELECT r.id, r.city, r.contact, r.ad_text, r.status, r.created_at, "
         f"r.pref_start_hour, r.pref_end_hour, r.public_token, r.photo_url, r.client_notified, "
         f"r.client_chat_id, r.pending_ad_text, r.pending_photo_url, r.pending_photo_clear, "
-        f"r.pending_at, "
+        f"r.pending_at, r.client_name, r.client_username, "
         f"c.id, c.state, c.posts_sent, c.last_sent_at, c.last_error, c.expires_at, "
-        f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until "
+        f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until, "
+        f"c.price_amount, c.paid_at, c.days_paid, "
+        f"COALESCE((SELECT SUM(p.amount) FROM {schema}.payments p "
+        f"          WHERE p.request_id = r.id), 0) "
         f"FROM {schema}.ad_requests r "
         f"LEFT JOIN {schema}.campaigns c ON c.request_id = r.id AND c.state <> 'archived' "
         f"ORDER BY r.created_at DESC LIMIT 200"
@@ -62,18 +74,24 @@ def list_data(cur, schema: str) -> dict:
                 'photo_clear': row[14],
                 'created_at': row[15],
             },
-            'campaign': None if row[16] is None else {
-                'id': row[16],
-                'state': row[17],
-                'posts_sent': row[18],
-                'last_sent_at': row[19],
-                'last_error': row[20],
-                'expires_at': row[21],
-                'interval_minutes': row[22],
-                'window_start_hour': row[23],
-                'window_end_hour': row[24],
-                'paused_until': row[25],
+            'client_name': row[16],
+            'client_username': row[17],
+            'campaign': None if row[18] is None else {
+                'id': row[18],
+                'state': row[19],
+                'posts_sent': row[20],
+                'last_sent_at': row[21],
+                'last_error': row[22],
+                'expires_at': row[23],
+                'interval_minutes': row[24],
+                'window_start_hour': row[25],
+                'window_end_hour': row[26],
+                'paused_until': row[27],
+                'price_amount': float(row[28]) if row[28] is not None else None,
+                'paid_at': row[29],
+                'days_paid': row[30],
             },
+            'total_paid': float(row[31] or 0),
         })
 
     cur.execute(
@@ -272,14 +290,25 @@ def handler(event: dict, context) -> dict:
                 f"UPDATE {schema}.campaigns SET state = 'archived' "
                 f"WHERE request_id = {request_id} AND state <> 'archived'"
             )
+            amount = money(body.get('amount'))
+            note = esc(body.get('payment_note', ''))[:200]
+            paid_sql = 'CURRENT_TIMESTAMP' if amount else 'NULL'
+
             cur.execute(
                 f"INSERT INTO {schema}.campaigns "
                 f"(request_id, city, interval_minutes, state, next_run_at, days_paid, expires_at, "
-                f"window_start_hour, window_end_hour) VALUES "
+                f"window_start_hour, window_end_hour, price_amount, paid_at, payment_note) VALUES "
                 f"({request_id}, '{esc(city)}', {interval}, 'running', CURRENT_TIMESTAMP, {days}, "
-                f"CURRENT_TIMESTAMP + INTERVAL '{days} days', {win_start}, {win_end}) RETURNING id"
+                f"CURRENT_TIMESTAMP + INTERVAL '{days} days', {win_start}, {win_end}, "
+                f"{amount if amount else 'NULL'}, {paid_sql}, '{note}') RETURNING id"
             )
             campaign_id = cur.fetchone()[0]
+            if amount:
+                cur.execute(
+                    f"INSERT INTO {schema}.payments "
+                    f"(campaign_id, request_id, amount, days, kind, note) VALUES "
+                    f"({campaign_id}, {request_id}, {amount}, {days}, 'start', '{note}')"
+                )
             cur.execute(
                 f"UPDATE {schema}.ad_requests SET status = 'approved' WHERE id = {request_id}"
             )
@@ -335,12 +364,28 @@ def handler(event: dict, context) -> dict:
         if action == 'extend':
             campaign_id = int(body.get('campaign_id', 0))
             days = max(1, min(int(body.get('days', 30)), 365))
+            amount = money(body.get('amount'))
+            note = esc(body.get('payment_note', ''))[:200]
+
+            paid_set = ''
+            if amount:
+                paid_set = (f", price_amount = COALESCE(price_amount, 0) + {amount}, "
+                            f"paid_at = CURRENT_TIMESTAMP, payment_note = '{note}'")
+
             cur.execute(
                 f"UPDATE {schema}.campaigns SET "
                 f"expires_at = GREATEST(COALESCE(expires_at, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP) "
-                f"+ INTERVAL '{days} days', state = 'running', reminder_sent_at = NULL "
-                f"WHERE id = {campaign_id}"
+                f"+ INTERVAL '{days} days', state = 'running', reminder_sent_at = NULL, "
+                f"days_paid = COALESCE(days_paid, 0) + {days}{paid_set} "
+                f"WHERE id = {campaign_id} RETURNING request_id"
             )
+            row = cur.fetchone()
+            if row and amount:
+                cur.execute(
+                    f"INSERT INTO {schema}.payments "
+                    f"(campaign_id, request_id, amount, days, kind, note) VALUES "
+                    f"({campaign_id}, {row[0]}, {amount}, {days}, 'extend', '{note}')"
+                )
             return json_response(200, {'ok': True})
 
         if action == 'save_group':

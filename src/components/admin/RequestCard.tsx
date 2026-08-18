@@ -22,6 +22,7 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
   const [interval, setInterval] = useState(15);
   const [open, setOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [amount, setAmount] = useState('');
 
   const c = item.campaign;
   const isPaused = Boolean(c?.paused_until && new Date(c.paused_until) > new Date());
@@ -48,7 +49,19 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
           <div className="mt-2 flex flex-wrap gap-4 text-sm" style={{ color: 'var(--hero-muted)' }}>
             <span className="flex items-center gap-2">
               <Icon name="User" size={14} />
-              {item.contact}
+              {item.client_name ? `${item.client_name} · ` : ''}
+              {item.client_username ? (
+                <a
+                  href={`https://t.me/${item.client_username}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: 'var(--hero-accent)' }}
+                >
+                  @{item.client_username}
+                </a>
+              ) : (
+                item.contact
+              )}
             </span>
             <span className="flex items-center gap-2">
               <Icon name="Clock" size={14} />
@@ -154,6 +167,9 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
           <span>Последний раз: {formatDate(c.last_sent_at)}</span>
           <span>Действует до: {formatDate(c.expires_at)}</span>
           <span>Каждые {c.interval_minutes} мин</span>
+          <span style={{ color: item.total_paid > 0 ? 'var(--hero-x-quarter)' : 'var(--hero-accent)' }}>
+            {item.total_paid > 0 ? `Оплачено: ${item.total_paid} ₽` : 'Оплата не внесена'}
+          </span>
           {isPaused && (
             <span style={{ color: 'var(--hero-accent)' }}>
               Пауза до: {formatDate(c.paused_until)}
@@ -196,11 +212,31 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
                 style={{ width: 90, padding: '8px 10px' }}
               />
             </label>
+            <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--hero-muted)' }}>
+              Оплата, ₽
+              <input
+                className="field"
+                type="number"
+                min={0}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0"
+                style={{ width: 100, padding: '8px 10px' }}
+              />
+            </label>
             <button
               className="btn btn-primary"
               disabled={busy}
               style={{ padding: '10px 20px', fontSize: '0.75em' }}
-              onClick={() => onAction({ action: 'approve', id: item.id, days, interval_minutes: interval })}
+              onClick={() =>
+                onAction({
+                  action: 'approve',
+                  id: item.id,
+                  days,
+                  interval_minutes: interval,
+                  amount,
+                })
+              }
             >
               Одобрить и запустить
             </button>
@@ -248,11 +284,23 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
               />
               дн.
             </label>
+            <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--hero-muted)' }}>
+              Оплата, ₽
+              <input
+                className="field"
+                type="number"
+                min={0}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0"
+                style={{ width: 100, padding: '8px 10px' }}
+              />
+            </label>
             <button
               className="btn btn-ghost"
               disabled={busy}
               style={{ padding: '10px 20px', fontSize: '0.75em' }}
-              onClick={() => onAction({ action: 'extend', campaign_id: c.id, days })}
+              onClick={() => onAction({ action: 'extend', campaign_id: c.id, days, amount })}
             >
               Продлить
             </button>

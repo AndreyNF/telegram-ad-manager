@@ -20,6 +20,8 @@ interface StatusData {
     created_at: string;
   } | null;
   edit_rejected_at: string | null;
+  total_paid: number;
+  days_paid: number | null;
   campaign: {
     state: string;
     posts_sent: number;
@@ -157,11 +159,14 @@ const Status = () => {
         </div>
 
         {c && (
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { label: 'Публикаций', value: c.posts_sent, icon: 'Send' },
               { label: 'Раз в', value: `${c.interval_minutes} мин`, icon: 'Repeat' },
               { label: 'Действует до', value: formatDate(c.expires_at), icon: 'CalendarClock' },
+              ...(data.total_paid > 0
+                ? [{ label: 'Оплачено', value: `${data.total_paid} ₽`, icon: 'Wallet' }]
+                : []),
             ].map((s) => (
               <div key={s.label} className="card">
                 <Icon name={s.icon} size={20} style={{ color: 'var(--hero-accent)' }} />

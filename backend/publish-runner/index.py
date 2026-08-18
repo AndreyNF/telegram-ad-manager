@@ -16,6 +16,25 @@ CORS_HEADERS = {
 }
 
 
+def with_author(ad_text: str, name: str, username: str) -> str:
+    """Ставит в начало объявления имя автора и ссылку на его Telegram"""
+    clean_user = (username or '').strip().lstrip('@')
+    display = (name or '').strip()
+
+    if display and clean_user:
+        header = f'{display} — @{clean_user}'
+    elif clean_user:
+        header = f'@{clean_user}'
+    elif display:
+        header = display
+    else:
+        return ad_text
+
+    if ad_text.lstrip().startswith(header):
+        return ad_text
+    return f'{header}\n\n{ad_text}'
+
+
 def extract_file_id(data: dict) -> str:
     """Достаёт file_id самой крупной версии отправленного фото"""
     photos = ((data.get('result') or {}).get('photo')) or []
@@ -202,10 +221,14 @@ def handler(event: dict, context) -> dict:
         f") "
         f"SELECT cl.id, cl.interval_minutes, r.ad_text, g.chat_id, "
         f"       cl.window_start_hour, cl.window_end_hour, cl.tz_offset, r.photo_url, "
-        f"       cl.request_id, r.photo_file_id "
+        f"       cl.request_id, r.photo_file_id, "
+        f"       COALESCE(NULLIF(r.client_name, ''), u.first_name), "
+        f"       COALESCE(NULLIF(r.client_username, ''), u.username, "
+        f"                lower(ltrim(r.contact, '@'))) "
         f"FROM claimed cl "
         f"JOIN {schema}.ad_requests r ON r.id = cl.request_id "
-        f"LEFT JOIN {schema}.city_groups g ON g.city = cl.city"
+        f"LEFT JOIN {schema}.city_groups g ON g.city = cl.city "
+        f"LEFT JOIN {schema}.telegram_users u ON u.chat_id = r.client_chat_id"
     )
     rows = cur.fetchall()
 
@@ -213,7 +236,7 @@ def handler(event: dict, context) -> dict:
     errors = 0
     postponed = 0
     for (campaign_id, interval, ad_text, chat_id, win_start, win_end, tz_offset,
-         photo_url, request_id, photo_file_id) in rows:
+         photo_url, request_id, photo_file_id, client_name, client_username) in rows:
         delay = minutes_until_window(utc_hour, utc_minute, win_start, win_end, tz_offset)
         if delay > 0:
             postponed += 1
@@ -232,7 +255,8 @@ def handler(event: dict, context) -> dict:
             errors += 1
             continue
 
-        ok, error, file_id = send_message(token, chat_id, ad_text, photo_url, photo_file_id)
+        full_text = with_author(ad_text, client_name, client_username)
+        ok, error, file_id = send_message(token, chat_id, full_text, photo_url, photo_file_id)
         if ok:
             sent += 1
             if file_id and file_id != photo_file_id:
