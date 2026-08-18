@@ -11,6 +11,7 @@ import socket
 import ssl
 import time
 import urllib.parse
+import uuid
 
 HOST = 'api.telegram.org'
 _working_ip = None
@@ -41,17 +42,39 @@ def _connect_tls(ip: str, connect_timeout: float):
     return ctx.wrap_socket(raw, server_hostname=HOST)
 
 
-def _send_via(ip: str, token: str, method: str, body: bytes, timeout: float) -> dict:
+def build_multipart(params: dict, file_field: str, filename: str,
+                    file_bytes: bytes, mime: str = 'image/jpeg') -> tuple:
+    """Собирает multipart-тело для загрузки файла в Telegram"""
+    boundary = '----pv' + uuid.uuid4().hex
+    parts = []
+    for key, value in params.items():
+        if value is None:
+            continue
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n'
+            f'{value}\r\n'.encode()
+        )
+    parts.append(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; '
+        f'filename="{filename}"\r\nContent-Type: {mime}\r\n\r\n'.encode()
+    )
+    parts.append(file_bytes)
+    parts.append(f'\r\n--{boundary}--\r\n'.encode())
+    return b''.join(parts), f'multipart/form-data; boundary={boundary}'
+
+
+def _send_via(ip: str, token: str, method: str, body: bytes, timeout: float,
+              content_type: str = 'application/x-www-form-urlencoded') -> dict:
     tls = _connect_tls(ip, timeout)
     tls.settimeout(timeout)
     request = (
         f'POST /bot{token}/{method} HTTP/1.1\r\n'
         f'Host: {HOST}\r\n'
-        f'Content-Type: application/x-www-form-urlencoded\r\n'
+        f'Content-Type: {content_type}\r\n'
         f'Content-Length: {len(body)}\r\n'
         f'Connection: close\r\n\r\n'
     ).encode() + body
-    tls.send(request)
+    tls.sendall(request)
 
     chunks = []
     while True:
@@ -82,15 +105,23 @@ def _send_via(ip: str, token: str, method: str, body: bytes, timeout: float) -> 
     return json.loads(payload.decode())
 
 
-def call(token: str, method: str, params: dict, timeout: float = 2.5, budget: float = 3.0) -> dict:
+def call(token: str, method: str, params: dict, timeout: float = 2.5, budget: float = 3.0,
+         file_field: str = '', file_bytes: bytes = b'', filename: str = 'photo.jpg',
+         mime: str = 'image/jpeg') -> dict:
     """Вызывает метод Telegram Bot API, автоматически обходя недоступные IP"""
     global _working_ip
-    body = urllib.parse.urlencode(params).encode()
+
+    if file_field and file_bytes:
+        body, content_type = build_multipart(params, file_field, filename, file_bytes, mime)
+    else:
+        body = urllib.parse.urlencode(params).encode()
+        content_type = 'application/x-www-form-urlencoded'
+
     deadline = time.monotonic() + budget
 
     if _working_ip:
         try:
-            return _send_via(_working_ip, token, method, body, timeout)
+            return _send_via(_working_ip, token, method, body, timeout, content_type)
         except Exception:
             _working_ip = None
 
@@ -100,7 +131,7 @@ def call(token: str, method: str, params: dict, timeout: float = 2.5, budget: fl
         if remaining <= 0.3:
             break
         try:
-            result = _send_via(ip, token, method, body, min(timeout, remaining))
+            result = _send_via(ip, token, method, body, min(timeout, remaining), content_type)
             _working_ip = ip
             return result
         except Exception as exc:

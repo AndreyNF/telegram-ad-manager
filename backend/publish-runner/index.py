@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import urllib.request
 
 import psycopg2
 
@@ -41,6 +42,20 @@ def with_author(ad_text: str, name: str, username: str) -> str:
         return body
 
     return f'{header}\n\n{body}'
+
+
+def download_photo(url: str) -> tuple:
+    """Скачивает фото, чтобы отправить его в Telegram файлом"""
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            mime = resp.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+            data = resp.read(10 * 1024 * 1024)
+        if not data or not mime.startswith('image/'):
+            return (b'', '')
+        return (data, mime)
+    except Exception:
+        return (b'', '')
 
 
 def extract_file_id(data: dict) -> str:
@@ -88,6 +103,16 @@ def send_message(token: str, chat_id: str, text: str, photo_url: str = None,
                 photo_params['photo'] = photo_url
                 data = call_telegram(token, 'sendPhoto', photo_params,
                                      timeout=20.0, budget=45.0)
+
+            if not data.get('ok') and photo_url:
+                blob, mime = download_photo(photo_url)
+                if blob:
+                    upload = {k: v for k, v in photo_params.items() if k != 'photo'}
+                    data = call_telegram(
+                        token, 'sendPhoto', upload, timeout=25.0, budget=50.0,
+                        file_field='photo', file_bytes=blob,
+                        filename='ad.jpg', mime=mime,
+                    )
 
             if data.get('ok'):
                 if not fits:
