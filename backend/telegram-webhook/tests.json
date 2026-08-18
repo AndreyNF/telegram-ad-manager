@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Проверка доступности",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Пустое обновление обрабатывается",
+      "method": "POST",
+      "path": "/",
+      "body": {},
+      "expectedStatus": 200
+    }
+  ]
+}
