@@ -154,20 +154,21 @@ def send_cabinet(schema: str, chat_id: int) -> None:
         return
 
     lines = ['Ваши объявления:']
-    buttons = []
     for ad_id, city, status, public_token, state, expires_at in rows:
         label = state_label(status, state)
         until = f", до {expires_at.strftime('%d.%m.%Y')}" if expires_at else ''
         lines.append(f"\n#{ad_id} · {city} — {label}{until}")
-        buttons.append([{
-            'text': f'{city} (#{ad_id})',
-            'url': f'{site}/status/{public_token}',
-        }])
+
+    buttons = [[{
+        'text': 'Открыть личный кабинет',
+        'web_app': {'url': f'{site}/app'},
+    }]]
 
     call_telegram(token, 'sendMessage', {
         'chat_id': chat_id,
-        'text': '\n'.join(lines) + '\n\nОткройте кабинет, чтобы изменить текст или фото, '
-                                   'поставить показы на паузу и следить за статистикой.',
+        'text': '\n'.join(lines) + '\n\nВ кабинете можно изменить текст и фото, '
+                                   'поставить показы на паузу, продлить тариф '
+                                   'и посмотреть статистику.',
         'reply_markup': json.dumps({'inline_keyboard': buttons}),
     }, budget=6.0)
 
@@ -181,6 +182,17 @@ def setup_commands() -> None:
             {'command': 'cabinet', 'description': 'Личный кабинет объявления'},
             {'command': 'start', 'description': 'Начать работу с ботом'},
         ]),
+    })
+
+    site = os.environ.get('SITE_URL', '').rstrip('/')
+    if not site:
+        return
+    call_telegram(token, 'setChatMenuButton', {
+        'menu_button': json.dumps({
+            'type': 'web_app',
+            'text': 'Кабинет',
+            'web_app': {'url': f'{site}/app'},
+        }),
     })
 
 
