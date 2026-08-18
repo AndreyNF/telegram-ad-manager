@@ -41,8 +41,12 @@ def save_user(schema: str, username: str, chat_id: int, first_name: str = '') ->
     )
     cur.execute(
         f"UPDATE {schema}.ad_requests SET client_username = '{safe_username}', "
-        f"client_name = COALESCE(NULLIF(client_name, ''), NULLIF('{safe_name}', '')) "
-        f"WHERE client_chat_id = '{chat_id}' AND client_username IS NULL"
+        f"client_name = COALESCE(NULLIF('{safe_name}', ''), client_name) "
+        f"WHERE client_chat_id = '{chat_id}'"
+    )
+    cur.execute(
+        f"DELETE FROM {schema}.telegram_users WHERE chat_id = '{chat_id}' "
+        f"AND username <> '{safe_username}'"
     )
     cur.close()
     conn.close()
@@ -220,6 +224,24 @@ def handler(event: dict, context) -> dict:
 
     from_user = message.get('from') or {}
     username = from_user.get('username')
+
+    if chat_id and chat_type == 'private' and not username:
+        try:
+            call_telegram(os.environ['TELEGRAM_BOT_TOKEN'], 'sendMessage', {
+                'chat_id': chat_id,
+                'text': 'У вашего аккаунта не задан никнейм (@username) — без него мы не сможем '
+                        'указать вас в объявлении и связать заявку с этим чатом.\n\n'
+                        'Откройте настройки Telegram → «Имя пользователя», задайте ник '
+                        'и напишите нам ещё раз.',
+            }, budget=5.0)
+        except Exception:
+            pass
+        return {
+            'statusCode': 200,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({'ok': True}),
+            'isBase64Encoded': False,
+        }
 
     if username and chat_id and chat_type == 'private':
         try:

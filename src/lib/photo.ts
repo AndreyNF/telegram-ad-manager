@@ -1,5 +1,5 @@
-const MAX_SIDE = 2000;
-const TARGET_BYTES = 1400 * 1024;
+const MAX_SIDE = 1600;
+const TARGET_BYTES = 900 * 1024;
 
 const loadImage = (file: File): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {

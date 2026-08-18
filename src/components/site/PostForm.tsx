@@ -3,6 +3,7 @@ import Icon from '@/components/ui/icon';
 import useCities from '@/hooks/useCities';
 import { API, BOT_URL, hourLabel } from '@/lib/api';
 import { PLANS } from './Pricing';
+import preparePhoto from '@/lib/photo';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -36,17 +37,14 @@ const PostForm = () => {
       : `МСК${selectedCity.tz_offset > 3 ? '+' : ''}${selectedCity.tz_offset - 3}`
     : '';
 
-  const pickPhoto = (file: File | undefined) => {
+  const pickPhoto = async (file: File | undefined) => {
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Фото больше 5 МБ');
-      return;
-    }
     setError('');
-    const reader = new FileReader();
-    reader.onload = () =>
-      setPhoto({ name: file.name, type: file.type, data: String(reader.result) });
-    reader.readAsDataURL(file);
+    try {
+      setPhoto(await preparePhoto(file));
+    } catch {
+      setError('Не удалось обработать фото');
+    }
   };
 
   const submit = async (e: React.FormEvent) => {

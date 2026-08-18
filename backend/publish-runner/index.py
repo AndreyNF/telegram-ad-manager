@@ -16,23 +16,31 @@ CORS_HEADERS = {
 }
 
 
+def esc_html(value: str) -> str:
+    """Экранирует текст для HTML-разметки Telegram"""
+    return (str(value or '')
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;'))
+
+
 def with_author(ad_text: str, name: str, username: str) -> str:
-    """Ставит в начало объявления имя автора и ссылку на его Telegram"""
+    """Ставит в начало объявления имя автора со ссылкой на его Telegram (HTML)"""
     clean_user = (username or '').strip().lstrip('@')
     display = (name or '').strip()
+    body = esc_html(ad_text)
 
-    if display and clean_user:
-        header = f'{display} — @{clean_user}'
-    elif clean_user:
-        header = f'@{clean_user}'
+    if clean_user:
+        label = esc_html(display) if display else f'@{esc_html(clean_user)}'
+        header = f'<b><a href="https://t.me/{clean_user}">{label}</a></b>'
+        if display:
+            header += f' · @{esc_html(clean_user)}'
     elif display:
-        header = display
+        header = f'<b>{esc_html(display)}</b>'
     else:
-        return ad_text
+        return body
 
-    if ad_text.lstrip().startswith(header):
-        return ad_text
-    return f'{header}\n\n{ad_text}'
+    return f'{header}\n\n{body}'
 
 
 def extract_file_id(data: dict) -> str:
@@ -45,7 +53,8 @@ def extract_file_id(data: dict) -> str:
 
 
 def send_message(token: str, chat_id: str, text: str, photo_url: str = None,
-                 photo_file_id: str = None, cabinet_url: str = '') -> tuple:
+                 photo_file_id: str = None, cabinet_url: str = '',
+                 html: bool = False) -> tuple:
     """Отправляет сообщение или фото с подписью в чат. Возвращает (успех, ошибка, file_id)"""
     keyboard = None
     if cabinet_url:
@@ -54,37 +63,43 @@ def send_message(token: str, chat_id: str, text: str, photo_url: str = None,
             'url': cabinet_url,
         }]]})
 
+    mode = {'parse_mode': 'HTML'} if html else {}
+
+    def text_message(extra: dict = None) -> dict:
+        params = {'chat_id': chat_id, 'text': text, **mode}
+        if extra:
+            params.update(extra)
+        return call_telegram(token, 'sendMessage', params, timeout=8.0, budget=18.0)
+
     try:
         source = photo_file_id or photo_url
         if source:
             fits = len(text) <= 1024
-            data = call_telegram(token, 'sendPhoto', {
+            photo_params = {
                 'chat_id': chat_id,
                 'photo': source,
                 'caption': text if fits else '',
-            }, timeout=8.0, budget=20.0)
+                **(mode if fits else {}),
+            }
+            data = call_telegram(token, 'sendPhoto', photo_params,
+                                 timeout=20.0, budget=45.0)
 
             if not data.get('ok') and photo_file_id and photo_url:
-                data = call_telegram(token, 'sendPhoto', {
-                    'chat_id': chat_id,
-                    'photo': photo_url,
-                    'caption': text if fits else '',
-                }, timeout=8.0, budget=20.0)
+                photo_params['photo'] = photo_url
+                data = call_telegram(token, 'sendPhoto', photo_params,
+                                     timeout=20.0, budget=45.0)
 
             if data.get('ok'):
                 if not fits:
-                    call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
+                    text_message()
                 return (True, None, extract_file_id(data))
 
             note = str(data.get('description') or 'фото не отправлено')
-            data = call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
+            data = text_message()
             ok = bool(data.get('ok'))
             return (ok, f'фото не ушло: {note[:200]}' if ok else note[:300], '')
 
-        params = {'chat_id': chat_id, 'text': text}
-        if keyboard:
-            params['reply_markup'] = keyboard
-        data = call_telegram(token, 'sendMessage', params)
+        data = text_message({'reply_markup': keyboard} if keyboard else None)
         return (bool(data.get('ok')), None if data.get('ok') else str(data.get('description')), '')
     except Exception as exc:
         return (False, str(exc)[:400], '')
@@ -252,13 +267,16 @@ def handler(event: dict, context) -> dict:
         f"SELECT cl.id, cl.interval_minutes, r.ad_text, g.chat_id, "
         f"       cl.window_start_hour, cl.window_end_hour, cl.tz_offset, r.photo_url, "
         f"       cl.request_id, r.photo_file_id, "
-        f"       COALESCE(NULLIF(r.client_name, ''), u.first_name), "
-        f"       COALESCE(NULLIF(r.client_username, ''), u.username, "
+        f"       COALESCE(NULLIF(r.client_name, ''), u.first_name, n.first_name), "
+        f"       COALESCE(NULLIF(r.client_username, ''), u.username, n.username, "
         f"                lower(ltrim(r.contact, '@'))) "
         f"FROM claimed cl "
         f"JOIN {schema}.ad_requests r ON r.id = cl.request_id "
         f"LEFT JOIN {schema}.city_groups g ON g.city = cl.city "
-        f"LEFT JOIN {schema}.telegram_users u ON u.chat_id = r.client_chat_id"
+        f"LEFT JOIN {schema}.telegram_users u ON u.chat_id = r.client_chat_id "
+        f"LEFT JOIN {schema}.telegram_users n ON "
+        f"  replace(replace(replace(n.username, '_', ''), '.', ''), '-', '') = "
+        f"  replace(replace(replace(lower(ltrim(r.contact, '@')), '_', ''), '.', ''), '-', '')"
     )
     rows = cur.fetchall()
 
@@ -286,7 +304,8 @@ def handler(event: dict, context) -> dict:
             continue
 
         full_text = with_author(ad_text, client_name, client_username)
-        ok, error, file_id = send_message(token, chat_id, full_text, photo_url, photo_file_id)
+        ok, error, file_id = send_message(token, chat_id, full_text, photo_url,
+                                          photo_file_id, html=True)
         if ok:
             sent += 1
             if file_id and file_id != photo_file_id:
