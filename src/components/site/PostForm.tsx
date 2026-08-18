@@ -15,6 +15,7 @@ const PostForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [needBot, setNeedBot] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
   const [photo, setPhoto] = useState<{ name: string; type: string; data: string } | null>(null);
   const [form, setForm] = useState({
     city: '',
@@ -62,9 +63,11 @@ const PostForm = () => {
       const data = await res.json();
       if (!res.ok) {
         setNeedBot(Boolean(data.need_bot));
+        setLimitReached(Boolean(data.limit_reached));
         throw new Error(data.error || 'Не удалось отправить заявку');
       }
       setNeedBot(false);
+      setLimitReached(false);
       setForm({
         city: cities[0]?.city || '',
         contact: '',
@@ -324,7 +327,7 @@ const PostForm = () => {
                 <Icon name="TriangleAlert" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
                 <span className="text-sm">{error}</span>
               </div>
-              {needBot && (
+              {(needBot || limitReached) && (
                 <a
                   className="btn btn-primary"
                   href={BOT_URL}
@@ -333,7 +336,7 @@ const PostForm = () => {
                   style={{ alignSelf: 'flex-start', padding: '10px 20px', fontSize: '0.72em' }}
                 >
                   <Icon name="Send" size={15} />
-                  Запустить бота
+                  {limitReached ? 'Мои объявления в боте' : 'Запустить бота'}
                 </a>
               )}
             </div>

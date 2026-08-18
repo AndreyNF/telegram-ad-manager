@@ -53,10 +53,32 @@ def clear_draft(cur, schema: str, chat_id):
     cur.execute(f"DELETE FROM {schema}.bot_drafts WHERE chat_id = '{chat_id}'")
 
 
+UNPAID_LIMIT = 2
+
+
+def count_unpaid(cur, schema: str, chat_id) -> int:
+    """Считает заявки клиента без поступившей оплаты"""
+    cur.execute(
+        f"SELECT COUNT(*) FROM {schema}.ad_requests r "
+        f"WHERE r.client_chat_id = '{chat_id}' AND r.status <> 'rejected' "
+        f"AND NOT EXISTS (SELECT 1 FROM {schema}.payments p WHERE p.request_id = r.id)"
+    )
+    return int(cur.fetchone()[0] or 0)
+
+
 def start_draft(schema: str, chat_id) -> None:
     """Начинает подачу объявления: показывает список городов"""
     conn = db()
     cur = conn.cursor()
+
+    if count_unpaid(cur, schema, chat_id) >= UNPAID_LIMIT:
+        cur.close()
+        conn.close()
+        send(chat_id,
+             f'У вас уже {UNPAID_LIMIT} объявления без оплаты. Оплатите их — '
+             f'и сможете подать новое.\n\nПосмотреть свои объявления — /cabinet')
+        return
+
     cur.execute(
         f"SELECT city FROM {schema}.city_groups WHERE is_active = true "
         f"ORDER BY sort_order, city LIMIT 20"
@@ -149,6 +171,14 @@ def submit(schema: str, chat_id, username: str, first_name: str) -> None:
     if not draft:
         cur.close()
         conn.close()
+        return
+
+    if count_unpaid(cur, schema, chat_id) >= UNPAID_LIMIT:
+        clear_draft(cur, schema, chat_id)
+        cur.close()
+        conn.close()
+        send(chat_id, f'У вас уже {UNPAID_LIMIT} объявления без оплаты — '
+                      f'новое можно подать после оплаты.')
         return
 
     _, city, ad_text, photo_fid, start_hour, end_hour, plan = draft

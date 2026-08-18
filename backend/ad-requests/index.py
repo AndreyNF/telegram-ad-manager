@@ -103,6 +103,27 @@ def notify_telegram(city, contact, ad_text, window='', public_token='', photo_ur
             pass
 
 
+UNPAID_LIMIT = 2
+
+
+def count_unpaid(schema: str, chat_id: str) -> int:
+    """Считает заявки клиента, за которые ещё не поступила оплата"""
+    safe_chat = str(chat_id).replace("'", "''")
+    conn = psycopg2.connect(os.environ['DATABASE_URL'])
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT COUNT(*) FROM {schema}.ad_requests r "
+        f"WHERE r.client_chat_id = '{safe_chat}' "
+        f"AND r.status <> 'rejected' "
+        f"AND NOT EXISTS (SELECT 1 FROM {schema}.payments p WHERE p.request_id = r.id)"
+    )
+    total = cur.fetchone()[0] or 0
+    cur.close()
+    conn.close()
+    return int(total)
+
+
 def find_chat_id(schema: str, contact: str) -> str:
     """Ищет chat_id клиента по username, сохранённый при нажатии /start у бота"""
     raw = (contact or '').strip().lstrip('@').lower()
@@ -217,6 +238,18 @@ def handler(event: dict, context) -> dict:
                          'а затем отправьте заявку. Так мы сможем прислать вам ссылку '
                          'на личный кабинет и уведомления.',
                 'need_bot': True,
+            }, ensure_ascii=False),
+            'isBase64Encoded': False,
+        }
+
+    if count_unpaid(schema, chat_found) >= UNPAID_LIMIT:
+        return {
+            'statusCode': 400,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({
+                'error': f'У вас уже {UNPAID_LIMIT} объявления без оплаты. '
+                         f'Оплатите их, и можно будет подать новое.',
+                'limit_reached': True,
             }, ensure_ascii=False),
             'isBase64Encoded': False,
         }
