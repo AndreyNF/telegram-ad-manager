@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
-import { API, formatDate, hourLabel, BOT_URL } from '@/lib/api';
+import { API, formatDate, formatDateTz, hourLabel, tzLabel, BOT_URL } from '@/lib/api';
 import EditAd from '@/components/site/EditAd';
 import RenewPlan from '@/components/site/RenewPlan';
 import EditWindow from '@/components/site/EditWindow';
@@ -172,7 +172,11 @@ const Status = () => {
             {[
               { label: 'Публикаций', value: c.posts_sent, icon: 'Send' },
               { label: 'Раз в', value: `${c.interval_minutes} мин`, icon: 'Repeat' },
-              { label: 'Действует до', value: formatDate(c.expires_at), icon: 'CalendarClock' },
+              {
+                label: `Действует до · ${tzLabel(data.tz_offset)}`,
+                value: formatDateTz(c.expires_at, data.tz_offset),
+                icon: 'CalendarClock',
+              },
               ...(data.total_paid > 0
                 ? [{ label: 'Оплачено', value: `${data.total_paid} ₽`, icon: 'Wallet' }]
                 : []),
@@ -422,7 +426,8 @@ const Status = () => {
             )}
 
             <span className="text-sm" style={{ color: 'var(--hero-muted)' }}>
-              Последняя публикация: {formatDate(c.last_sent_at)}
+              Последняя публикация: {formatDateTz(c.last_sent_at, data.tz_offset)}{' '}
+              {tzLabel(data.tz_offset)}
             </span>
           </div>
         )}

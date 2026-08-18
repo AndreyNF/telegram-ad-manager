@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
-import { formatDate, hourLabel } from '@/lib/api';
+import { formatDate, formatDateTz, hourLabel, tzLabel } from '@/lib/api';
 import { AdRequest, PLAN_INFO, STATE_LABELS, STATUS_LABELS } from './types';
 import ClientChat from './ClientChat';
-import { tzLabel } from './GroupsTab';
 import TelegramPreview from './TelegramPreview';
 
 interface Props {
@@ -236,8 +235,12 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
       {c && (
         <div className="flex flex-wrap gap-4 text-sm" style={{ color: 'var(--hero-muted)' }}>
           <span>Опубликовано: {c.posts_sent}</span>
-          <span>Последний раз: {formatDate(c.last_sent_at)}</span>
-          <span>Действует до: {formatDate(c.expires_at)}</span>
+          <span>
+            Последний раз: {formatDateTz(c.last_sent_at, c.tz_offset)} {tzLabel(c.tz_offset)}
+          </span>
+          <span>
+            Действует до: {formatDateTz(c.expires_at, c.tz_offset)} {tzLabel(c.tz_offset)}
+          </span>
           <span>Каждые {c.interval_minutes} мин</span>
           <span style={{ color: item.total_paid > 0 ? 'var(--hero-x-quarter)' : 'var(--hero-accent)' }}>
             {item.total_paid > 0 ? `Оплачено: ${item.total_paid} ₽` : 'Оплата не внесена'}

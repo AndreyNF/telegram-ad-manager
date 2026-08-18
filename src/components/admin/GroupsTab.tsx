@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
+import { tzLabel } from '@/lib/api';
 import { CityGroup } from './types';
 
 interface Props {
@@ -21,8 +22,7 @@ const EMPTY = {
 
 const TZ_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-export const tzLabel = (tz: number) =>
-  tz === 3 ? 'МСК' : `МСК${tz > 3 ? '+' : ''}${tz - 3}`;
+
 
 const GroupsTab = ({ groups, busy, onAction }: Props) => {
   const [draft, setDraft] = useState<CityGroup>(EMPTY);

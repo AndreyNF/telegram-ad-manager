@@ -56,6 +56,15 @@ const Admin = () => {
   }, []);
 
   useEffect(() => {
+    if (!authed) return;
+    const tick = () =>
+      fetch(API.publishRunner, { method: 'POST', body: '{}' }).catch(() => undefined);
+    tick();
+    const id = window.setInterval(tick, 120000);
+    return () => window.clearInterval(id);
+  }, [authed]);
+
+  useEffect(() => {
     if (!authed || !password) return;
     const id = window.setInterval(() => load(password, true), 60000);
     return () => window.clearInterval(id);
