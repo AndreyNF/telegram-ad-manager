@@ -376,6 +376,15 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
             >
               Продлить
             </button>
+            <button
+              className="btn btn-ghost"
+              disabled={busy}
+              style={{ padding: '10px 20px', fontSize: '0.75em' }}
+              onClick={() => onAction({ action: 'test_post', campaign_id: c.id })}
+            >
+              <Icon name="Send" size={14} />
+              Опубликовать сейчас
+            </button>
           </>
         )}
 

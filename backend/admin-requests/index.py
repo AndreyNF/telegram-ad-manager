@@ -19,6 +19,80 @@ def esc(value) -> str:
     return str(value or '').replace("'", "''")
 
 
+def f_quote(value) -> str:
+    return "'" + esc(value)[:400] + "'"
+
+
+def esc_html(value) -> str:
+    return (str(value or '').replace('&', '&amp;')
+            .replace('<', '&lt;').replace('>', '&gt;'))
+
+
+def build_post(ad_text: str, name: str, username: str) -> str:
+    """Собирает текст объявления с именем автора и ссылкой на Telegram"""
+    clean_user = (username or '').strip().lstrip('@')
+    display = (name or '').strip()
+    body = esc_html(ad_text)
+
+    if clean_user:
+        label = esc_html(display) if display else f'@{esc_html(clean_user)}'
+        header = f'<b><a href="https://t.me/{clean_user}">{label}</a></b>'
+        if display:
+            header += f' · @{esc_html(clean_user)}'
+    elif display:
+        header = f'<b>{esc_html(display)}</b>'
+    else:
+        return body
+
+    return f'{header}\n\n{body}'
+
+
+def publish_now(token: str, chat_id: str, ad_text: str, photo_url: str,
+                photo_file_id: str, name: str, username: str) -> tuple:
+    """Публикует объявление в группу прямо сейчас. Возвращает (успех, заметка, file_id)"""
+    text = build_post(ad_text, name, username)
+    source = photo_file_id or photo_url
+
+    try:
+        if source:
+            fits = len(text) <= 1024
+            params = {'chat_id': chat_id, 'photo': source,
+                      'caption': text if fits else ''}
+            if fits:
+                params['parse_mode'] = 'HTML'
+            data = call_telegram(token, 'sendPhoto', params, timeout=20.0, budget=45.0)
+
+            if not data.get('ok') and photo_file_id and photo_url:
+                params['photo'] = photo_url
+                data = call_telegram(token, 'sendPhoto', params, timeout=20.0, budget=45.0)
+
+            if data.get('ok'):
+                photos = ((data.get('result') or {}).get('photo')) or []
+                fid = ''
+                if photos:
+                    fid = max(photos, key=lambda p: p.get('file_size') or 0).get('file_id', '')
+                if not fits:
+                    call_telegram(token, 'sendMessage',
+                                  {'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
+                                  timeout=8.0, budget=18.0)
+                return (True, None, fid)
+
+            note = str(data.get('description') or 'фото не отправлено')
+            data = call_telegram(token, 'sendMessage',
+                                 {'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
+                                 timeout=8.0, budget=18.0)
+            ok = bool(data.get('ok'))
+            return (ok, f'фото не ушло: {note[:200]}' if ok else note[:300], '')
+
+        data = call_telegram(token, 'sendMessage',
+                             {'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
+                             timeout=8.0, budget=18.0)
+        return (bool(data.get('ok')), None if data.get('ok')
+                else str(data.get('description'))[:300], '')
+    except Exception as exc:
+        return (False, str(exc)[:300], '')
+
+
 def money(value) -> float:
     """Приводит сумму оплаты к числу, отсекая мусор"""
     try:
@@ -308,6 +382,51 @@ def handler(event: dict, context) -> dict:
 
             return json_response(200, {'ok': True})
 
+        if action == 'test_post':
+            campaign_id = int(body.get('campaign_id', 0))
+            cur.execute(
+                f"SELECT r.ad_text, r.photo_url, r.photo_file_id, g.chat_id, "
+                f"COALESCE(NULLIF(r.client_name, ''), u.first_name), "
+                f"COALESCE(NULLIF(r.client_username, ''), u.username, "
+                f"         lower(ltrim(r.contact, '@'))), r.id "
+                f"FROM {schema}.campaigns c "
+                f"JOIN {schema}.ad_requests r ON r.id = c.request_id "
+                f"LEFT JOIN {schema}.city_groups g ON g.city = c.city "
+                f"LEFT JOIN {schema}.telegram_users u ON u.chat_id = r.client_chat_id "
+                f"WHERE c.id = {campaign_id}"
+            )
+            row = cur.fetchone()
+            if not row:
+                return json_response(404, {'error': 'Открутка не найдена'})
+            if not row[3]:
+                return json_response(400, {'error': 'У города не указана группа Telegram'})
+
+            token_bot = os.environ.get('TELEGRAM_BOT_TOKEN')
+            if not token_bot:
+                return json_response(500, {'error': 'Бот не настроен'})
+
+            ok, err, file_id = publish_now(
+                token_bot, row[3], row[0], row[1], row[2], row[4], row[5]
+            )
+            if ok:
+                if file_id:
+                    cur.execute(
+                        f"UPDATE {schema}.ad_requests SET photo_file_id = '{esc(file_id)}' "
+                        f"WHERE id = {int(row[6])}"
+                    )
+                cur.execute(
+                    f"UPDATE {schema}.campaigns SET posts_sent = posts_sent + 1, "
+                    f"last_sent_at = CURRENT_TIMESTAMP, last_error = "
+                    f"{f_quote(err) if err else 'NULL'} WHERE id = {campaign_id}"
+                )
+                return json_response(200, {'ok': True, 'warning': err})
+
+            cur.execute(
+                f"UPDATE {schema}.campaigns SET last_error = {f_quote(err or 'Ошибка')} "
+                f"WHERE id = {campaign_id}"
+            )
+            return json_response(502, {'error': err or 'Не удалось опубликовать'})
+
         if action == 'send_message':
             request_id = int(body.get('id', 0))
             text = (body.get('text') or '').strip()[:3000]
@@ -509,7 +628,8 @@ def handler(event: dict, context) -> dict:
                     f"WHERE id = {int(group_id)}"
                 )
                 cur.execute(
-                    f"UPDATE {schema}.campaigns SET tz_offset = {tz_offset} "
+                    f"UPDATE {schema}.campaigns SET tz_offset = {tz_offset}, "
+                    f"next_run_at = CURRENT_TIMESTAMP "
                     f"WHERE city = '{city}' AND state <> 'archived'"
                 )
             else:
