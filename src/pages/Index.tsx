@@ -4,18 +4,23 @@ import HowItWorks from '@/components/site/HowItWorks';
 import Cities from '@/components/site/Cities';
 import PostForm from '@/components/site/PostForm';
 import Footer from '@/components/site/Footer';
+import useHeartbeat from '@/hooks/useHeartbeat';
 
-const Index = () => (
-  <div className="min-h-screen">
-    <Header />
-    <main>
-      <Hero />
-      <HowItWorks />
-      <Cities />
-      <PostForm />
-    </main>
-    <Footer />
-  </div>
-);
+const Index = () => {
+  useHeartbeat();
+
+  return (
+    <div className="min-h-screen">
+      <Header />
+      <main>
+        <Hero />
+        <HowItWorks />
+        <Cities />
+        <PostForm />
+      </main>
+      <Footer />
+    </div>
+  );
+};
 
 export default Index;

@@ -3,6 +3,7 @@ import Icon from '@/components/ui/icon';
 import { API } from '@/lib/api';
 import RequestCard from '@/components/admin/RequestCard';
 import GroupsTab from '@/components/admin/GroupsTab';
+import ScheduleInfo from '@/components/admin/ScheduleInfo';
 import { AdRequest, CityGroup } from '@/components/admin/types';
 
 const FILTERS = [
@@ -18,7 +19,7 @@ const Admin = () => {
   const [authed, setAuthed] = useState(false);
   const [requests, setRequests] = useState<AdRequest[]>([]);
   const [groups, setGroups] = useState<CityGroup[]>([]);
-  const [tab, setTab] = useState<'requests' | 'groups'>('requests');
+  const [tab, setTab] = useState<'requests' | 'groups' | 'schedule'>('requests');
   const [filter, setFilter] = useState('new');
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -201,14 +202,14 @@ const Admin = () => {
         </div>
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          {(['requests', 'groups'] as const).map((t) => (
+          {(['requests', 'groups', 'schedule'] as const).map((t) => (
             <button
               key={t}
               className={t === tab ? 'btn btn-primary' : 'btn btn-ghost'}
               style={{ padding: '10px 20px', fontSize: '0.75em' }}
               onClick={() => setTab(t)}
             >
-              {t === 'requests' ? 'Заявки' : 'Города и группы'}
+              {t === 'requests' ? 'Заявки' : t === 'groups' ? 'Города и группы' : 'Расписание'}
             </button>
           ))}
         </div>
@@ -253,9 +254,13 @@ const Admin = () => {
               ))}
             </div>
           </>
-        ) : (
+        ) : tab === 'groups' ? (
           <div className="mt-6">
             <GroupsTab groups={groups} busy={busy} onAction={act} />
+          </div>
+        ) : (
+          <div className="mt-6">
+            <ScheduleInfo />
           </div>
         )}
       </main>
