@@ -70,17 +70,27 @@ def notify_telegram(city, contact, ad_text, window='', public_token='', photo_ur
         f"Время показа: {window}{link}{reach_note}\n\n{ad_text}"
     )
 
-    try:
-        if photo_url:
-            call_telegram(token, 'sendPhoto', {
+    sent_ok = False
+    if photo_url:
+        try:
+            fits = len(text) <= 1024
+            data = call_telegram(token, 'sendPhoto', {
                 'chat_id': chat_id,
                 'photo': photo_url,
-                'caption': text[:1000],
-            }, budget=1.5)
-        else:
-            call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text}, budget=1.5)
-    except Exception:
-        pass
+                'caption': text if fits else '',
+            }, budget=4.0)
+            sent_ok = bool(data.get('ok'))
+            if sent_ok and not fits:
+                call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text}, budget=3.0)
+        except Exception:
+            sent_ok = False
+
+    if not sent_ok:
+        try:
+            note = text if not photo_url else f"{text}\n\nФото: {photo_url}"
+            call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': note}, budget=3.0)
+        except Exception:
+            pass
 
 
 def find_chat_id(schema: str, contact: str) -> str:
@@ -92,10 +102,16 @@ def find_chat_id(schema: str, contact: str) -> str:
         return raw
 
     safe_username = raw.replace("'", "''")
+    compact = safe_username.replace('_', '').replace('.', '').replace('-', '')
     conn = psycopg2.connect(os.environ['DATABASE_URL'])
     conn.autocommit = True
     cur = conn.cursor()
-    cur.execute(f"SELECT chat_id FROM {schema}.telegram_users WHERE username = '{safe_username}'")
+    cur.execute(
+        f"SELECT chat_id FROM {schema}.telegram_users "
+        f"WHERE username = '{safe_username}' OR "
+        f"replace(replace(replace(username, '_', ''), '.', ''), '-', '') = '{compact}' "
+        f"ORDER BY (username = '{safe_username}') DESC LIMIT 1"
+    )
     row = cur.fetchone()
     cur.close()
     conn.close()

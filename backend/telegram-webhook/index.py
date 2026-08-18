@@ -27,9 +27,13 @@ def save_user(schema: str, username: str, chat_id: int) -> None:
         f"ON CONFLICT (username) DO UPDATE SET chat_id = EXCLUDED.chat_id, "
         f"updated_at = CURRENT_TIMESTAMP"
     )
+    compact = safe_username.replace('_', '').replace('.', '').replace('-', '')
     cur.execute(
         f"UPDATE {schema}.ad_requests SET client_chat_id = '{chat_id}' "
-        f"WHERE lower(ltrim(contact, '@')) = '{safe_username}' AND client_chat_id IS NULL"
+        f"WHERE client_chat_id IS NULL AND ("
+        f"  lower(ltrim(contact, '@')) = '{safe_username}' OR "
+        f"  replace(replace(replace(lower(ltrim(contact, '@')), '_', ''), '.', ''), '-', '') "
+        f"    = '{compact}')"
     )
     cur.close()
     conn.close()
