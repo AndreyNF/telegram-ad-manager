@@ -59,7 +59,8 @@ def save_incoming(schema: str, chat_id: int, text: str) -> None:
     conn.autocommit = True
     cur = conn.cursor()
     cur.execute(
-        f"SELECT id FROM {schema}.ad_requests WHERE client_chat_id = '{chat_id}' "
+        f"SELECT id, city, COALESCE(NULLIF(client_name, ''), contact), client_username "
+        f"FROM {schema}.ad_requests WHERE client_chat_id = '{chat_id}' "
         f"ORDER BY created_at DESC LIMIT 1"
     )
     row = cur.fetchone()
@@ -71,6 +72,31 @@ def save_incoming(schema: str, chat_id: int, text: str) -> None:
         )
     cur.close()
     conn.close()
+
+    if not row:
+        return
+
+    admin_chat = os.environ.get('TELEGRAM_ADMIN_CHAT_ID')
+    if not admin_chat:
+        return
+
+    site = os.environ.get('SITE_URL', '').rstrip('/')
+    who = row[2] or 'клиент'
+    nick = f' (@{row[3]})' if row[3] else ''
+    params = {
+        'chat_id': admin_chat,
+        'text': f'Сообщение от клиента\n\n{who}{nick} · заявка #{row[0]} ({row[1]})\n\n'
+                f'{text[:600]}',
+    }
+    if site:
+        params['reply_markup'] = json.dumps({'inline_keyboard': [[{
+            'text': 'Ответить в админке',
+            'url': f'{site}/admin',
+        }]]})
+    try:
+        call_telegram(os.environ['TELEGRAM_BOT_TOKEN'], 'sendMessage', params, budget=5.0)
+    except Exception:
+        pass
 
 
 def get_user_ads(schema: str, chat_id: int) -> list:

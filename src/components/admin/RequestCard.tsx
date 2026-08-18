@@ -397,6 +397,19 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
         >
           <Icon name="MessageCircle" size={14} />
           {chatOpen ? 'Скрыть чат' : 'Написать клиенту'}
+          {item.unread > 0 && !chatOpen && (
+            <span
+              style={{
+                background: 'var(--hero-accent)',
+                color: '#fff',
+                borderRadius: 10,
+                padding: '1px 7px',
+                marginLeft: 6,
+              }}
+            >
+              {item.unread}
+            </span>
+          )}
         </button>
 
         {item.public_token && (

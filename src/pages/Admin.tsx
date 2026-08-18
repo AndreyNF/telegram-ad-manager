@@ -4,6 +4,7 @@ import { API } from '@/lib/api';
 import RequestCard from '@/components/admin/RequestCard';
 import GroupsTab from '@/components/admin/GroupsTab';
 import ScheduleInfo from '@/components/admin/ScheduleInfo';
+import ChatsTab from '@/components/admin/ChatsTab';
 import { AdRequest, CityGroup } from '@/components/admin/types';
 
 const FILTERS = [
@@ -21,7 +22,7 @@ const Admin = () => {
   const [requests, setRequests] = useState<AdRequest[]>([]);
   const [groups, setGroups] = useState<CityGroup[]>([]);
   const [heartbeat, setHeartbeat] = useState<{ last_run_at: string | null; minutes_ago: number | null } | null>(null);
-  const [tab, setTab] = useState<'requests' | 'groups' | 'schedule'>('requests');
+  const [tab, setTab] = useState<'requests' | 'chats' | 'groups' | 'schedule'>('requests');
   const [filter, setFilter] = useState('new');
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -155,6 +156,7 @@ const Admin = () => {
     running: requests.filter((r) => r.campaign?.state === 'running').length,
     posts: requests.reduce((sum, r) => sum + (r.campaign?.posts_sent || 0), 0),
     revenue: requests.reduce((sum, r) => sum + (r.total_paid || 0), 0),
+    unread: requests.reduce((sum, r) => sum + (r.unread || 0), 0),
   };
 
   return (
@@ -257,14 +259,20 @@ const Admin = () => {
         </div>
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          {(['requests', 'groups', 'schedule'] as const).map((t) => (
+          {(['requests', 'chats', 'groups', 'schedule'] as const).map((t) => (
             <button
               key={t}
               className={t === tab ? 'btn btn-primary' : 'btn btn-ghost'}
               style={{ padding: '10px 20px', fontSize: '0.75em' }}
               onClick={() => setTab(t)}
             >
-              {t === 'requests' ? 'Заявки' : t === 'groups' ? 'Города и группы' : 'Расписание'}
+              {t === 'requests'
+                ? 'Заявки'
+                : t === 'chats'
+                  ? `Чаты${stats.unread > 0 ? ` · ${stats.unread}` : ''}`
+                  : t === 'groups'
+                    ? 'Города и группы'
+                    : 'Расписание'}
             </button>
           ))}
         </div>
@@ -310,6 +318,8 @@ const Admin = () => {
               ))}
             </div>
           </>
+        ) : tab === 'chats' ? (
+          <ChatsTab password={password} onRefresh={() => load(password, true)} />
         ) : tab === 'groups' ? (
           <div className="mt-6">
             <GroupsTab groups={groups} busy={busy} onAction={act} />

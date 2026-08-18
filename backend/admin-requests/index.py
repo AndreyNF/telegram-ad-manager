@@ -49,7 +49,9 @@ def list_data(cur, schema: str) -> dict:
         f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until, "
         f"c.price_amount, c.paid_at, c.days_paid, c.tz_offset, "
         f"COALESCE((SELECT SUM(p.amount) FROM {schema}.payments p "
-        f"          WHERE p.request_id = r.id), 0) "
+        f"          WHERE p.request_id = r.id), 0), "
+        f"(SELECT COUNT(*) FROM {schema}.client_messages m "
+        f" WHERE m.request_id = r.id AND m.direction = 'in' AND m.is_read = false) "
         f"FROM {schema}.ad_requests r "
         f"LEFT JOIN {schema}.campaigns c ON c.request_id = r.id AND c.state <> 'archived' "
         f"ORDER BY r.created_at DESC LIMIT 200"
@@ -99,6 +101,7 @@ def list_data(cur, schema: str) -> dict:
                 'tz_offset': row[34],
             },
             'total_paid': float(row[35] or 0),
+            'unread': int(row[36] or 0),
         })
 
     cur.execute(
@@ -127,6 +130,41 @@ def list_data(cur, schema: str) -> dict:
     }
 
     return {'requests': requests, 'groups': groups, 'heartbeat': heartbeat}
+
+
+def list_chats(cur, schema: str) -> list:
+    """Собирает переписки со всеми клиентами: последнее сообщение и непрочитанные"""
+    cur.execute(
+        f"SELECT r.id, r.city, r.contact, r.client_name, r.client_username, "
+        f"       r.client_chat_id IS NOT NULL, r.public_token, "
+        f"       m.text, m.direction, m.created_at, "
+        f"       COALESCE(u.cnt, 0) "
+        f"FROM {schema}.ad_requests r "
+        f"LEFT JOIN LATERAL ("
+        f"  SELECT text, direction, created_at FROM {schema}.client_messages "
+        f"  WHERE request_id = r.id ORDER BY created_at DESC LIMIT 1"
+        f") m ON true "
+        f"LEFT JOIN LATERAL ("
+        f"  SELECT COUNT(*) AS cnt FROM {schema}.client_messages "
+        f"  WHERE request_id = r.id AND direction = 'in' AND is_read = false"
+        f") u ON true "
+        f"WHERE m.created_at IS NOT NULL OR r.client_chat_id IS NOT NULL "
+        f"ORDER BY COALESCE(u.cnt, 0) > 0 DESC, m.created_at DESC NULLS LAST, r.id DESC "
+        f"LIMIT 100"
+    )
+    return [{
+        'id': c[0],
+        'city': c[1],
+        'contact': c[2],
+        'client_name': c[3],
+        'client_username': c[4],
+        'can_write': bool(c[5]),
+        'public_token': c[6],
+        'last_text': c[7],
+        'last_direction': c[8],
+        'last_at': c[9],
+        'unread': int(c[10] or 0),
+    } for c in cur.fetchall()]
 
 
 def deliver_to_client(cur, schema: str, request_id: int, text: str) -> dict:
@@ -194,14 +232,24 @@ def handler(event: dict, context) -> dict:
             params = event.get('queryStringParameters') or {}
             messages_for = params.get('messages_for')
             if messages_for:
+                req_id = int(messages_for)
                 cur.execute(
                     f"SELECT direction, text, created_at FROM {schema}.client_messages "
-                    f"WHERE request_id = {int(messages_for)} ORDER BY created_at LIMIT 100"
+                    f"WHERE request_id = {req_id} ORDER BY created_at LIMIT 100"
                 )
-                return json_response(200, {'messages': [
+                messages = [
                     {'direction': m[0], 'text': m[1], 'created_at': m[2]}
                     for m in cur.fetchall()
-                ]})
+                ]
+                cur.execute(
+                    f"UPDATE {schema}.client_messages SET is_read = true "
+                    f"WHERE request_id = {req_id} AND direction = 'in' AND is_read = false"
+                )
+                return json_response(200, {'messages': messages})
+
+            if params.get('chats'):
+                return json_response(200, {'chats': list_chats(cur, schema)})
+
             return json_response(200, list_data(cur, schema))
 
         body = json.loads(event.get('body') or '{}')
