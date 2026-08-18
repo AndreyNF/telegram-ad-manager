@@ -248,7 +248,8 @@ def handler(event: dict, context) -> dict:
             text = (
                 f"Личный кабинет вашего объявления ({row[1]}):\n"
                 f"{site}/status/{row[0]}\n\n"
-                f"Здесь виден статус, количество публикаций и срок окончания."
+                f"Здесь можно изменить текст и фото, поставить показы на паузу "
+                f"и посмотреть статистику. Открыть кабинет снова — команда /cabinet"
             )
             return deliver_to_client(cur, schema, request_id, text)
 

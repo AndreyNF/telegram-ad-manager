@@ -59,6 +59,90 @@ def save_incoming(schema: str, chat_id: int, text: str) -> None:
     conn.close()
 
 
+def get_user_ads(schema: str, chat_id: int) -> list:
+    """Возвращает объявления клиента со ссылками на личный кабинет"""
+    conn = psycopg2.connect(os.environ['DATABASE_URL'])
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT r.id, r.city, r.status, r.public_token, c.state, c.expires_at "
+        f"FROM {schema}.ad_requests r "
+        f"LEFT JOIN {schema}.campaigns c ON c.request_id = r.id AND c.state <> 'archived' "
+        f"WHERE r.client_chat_id = '{chat_id}' AND r.public_token IS NOT NULL "
+        f"ORDER BY r.created_at DESC LIMIT 10"
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def state_label(status: str, state: str) -> str:
+    if state == 'running':
+        return 'публикуется'
+    if state == 'stopped':
+        return 'остановлено'
+    if state == 'expired':
+        return 'срок закончился'
+    if status == 'rejected':
+        return 'отклонено'
+    if status == 'approved':
+        return 'одобрено'
+    return 'ждёт модерации'
+
+
+def send_cabinet(schema: str, chat_id: int) -> None:
+    """Отправляет клиенту кнопки входа в личный кабинет по каждому объявлению"""
+    token = os.environ['TELEGRAM_BOT_TOKEN']
+    site = os.environ.get('SITE_URL', '').rstrip('/')
+    rows = get_user_ads(schema, chat_id)
+
+    if not rows:
+        call_telegram(token, 'sendMessage', {
+            'chat_id': chat_id,
+            'text': 'У вас пока нет объявлений. Оставьте заявку на сайте — '
+                    'после этого личный кабинет откроется здесь.'
+                    + (f'\n{site}' if site else ''),
+        })
+        return
+
+    if not site:
+        call_telegram(token, 'sendMessage', {
+            'chat_id': chat_id,
+            'text': 'Личный кабинет временно недоступен.',
+        })
+        return
+
+    lines = ['Ваши объявления:']
+    buttons = []
+    for ad_id, city, status, public_token, state, expires_at in rows:
+        label = state_label(status, state)
+        until = f", до {expires_at.strftime('%d.%m.%Y')}" if expires_at else ''
+        lines.append(f"\n#{ad_id} · {city} — {label}{until}")
+        buttons.append([{
+            'text': f'{city} (#{ad_id})',
+            'url': f'{site}/status/{public_token}',
+        }])
+
+    call_telegram(token, 'sendMessage', {
+        'chat_id': chat_id,
+        'text': '\n'.join(lines) + '\n\nОткройте кабинет, чтобы изменить текст или фото, '
+                                   'поставить показы на паузу и следить за статистикой.',
+        'reply_markup': json.dumps({'inline_keyboard': buttons}),
+    }, budget=6.0)
+
+
+def setup_commands() -> None:
+    """Показывает клиенту меню команд бота"""
+    token = os.environ['TELEGRAM_BOT_TOKEN']
+    call_telegram(token, 'setMyCommands', {
+        'commands': json.dumps([
+            {'command': 'cabinet', 'description': 'Личный кабинет объявления'},
+            {'command': 'start', 'description': 'Начать работу с ботом'},
+        ]),
+    })
+
+
 def save_group(schema: str, chat_id: int, title: str) -> None:
     """Автоматически подставляет ID группы по её названию, если город совпал"""
     if not title:
@@ -134,20 +218,38 @@ def handler(event: dict, context) -> dict:
         except Exception:
             pass
 
-        text = message.get('text', '')
+        text = (message.get('text') or '').strip()
+        lower = text.lower()
+
         if text and not text.startswith('/'):
             try:
                 save_incoming(schema, chat_id, text)
             except Exception:
                 pass
 
-        if text.startswith('/start'):
+        wants_cabinet = (
+            lower.startswith('/cabinet')
+            or lower.startswith('/status')
+            or lower in ('кабинет', 'личный кабинет', 'мои объявления')
+        )
+
+        if wants_cabinet:
+            try:
+                send_cabinet(schema, chat_id)
+            except Exception:
+                pass
+
+        elif lower.startswith('/start'):
             try:
                 token = os.environ['TELEGRAM_BOT_TOKEN']
                 call_telegram(token, 'sendMessage', {
                     'chat_id': chat_id,
-                    'text': 'Готово! Теперь мы сможем присылать вам ссылку на статус объявления и уведомления.',
+                    'text': 'Готово! Здесь вы будете получать уведомления по объявлению.\n\n'
+                            'Команда /cabinet — вход в личный кабинет: там можно изменить '
+                            'текст и фото, поставить показы на паузу и посмотреть статистику.',
                 })
+                setup_commands()
+                send_cabinet(schema, chat_id)
             except Exception:
                 pass
 

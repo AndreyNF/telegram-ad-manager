@@ -129,9 +129,18 @@ def notify_client_direct(client_chat: str, city: str, window: str, public_token:
         f"Заявка принята в работу\n\n"
         f"Город: {city}\n"
         f"Время показа: {window}\n\n"
-        f"Статус и управление откруткой: {site}/status/{public_token}"
+        f"В личном кабинете можно изменить текст и фото, поставить показы на паузу "
+        f"и посмотреть статистику. Открыть его снова — команда /cabinet"
     )
-    data = call_telegram(token, 'sendMessage', {'chat_id': client_chat, 'text': text}, budget=2.0)
+    keyboard = json.dumps({'inline_keyboard': [[{
+        'text': 'Открыть личный кабинет',
+        'url': f'{site}/status/{public_token}',
+    }]]})
+    data = call_telegram(token, 'sendMessage', {
+        'chat_id': client_chat,
+        'text': text,
+        'reply_markup': keyboard,
+    }, budget=4.0)
     return bool(data.get('ok'))
 
 
