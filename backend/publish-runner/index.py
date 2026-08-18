@@ -45,8 +45,15 @@ def extract_file_id(data: dict) -> str:
 
 
 def send_message(token: str, chat_id: str, text: str, photo_url: str = None,
-                 photo_file_id: str = None) -> tuple:
+                 photo_file_id: str = None, cabinet_url: str = '') -> tuple:
     """Отправляет сообщение или фото с подписью в чат. Возвращает (успех, ошибка, file_id)"""
+    keyboard = None
+    if cabinet_url:
+        keyboard = json.dumps({'inline_keyboard': [[{
+            'text': 'Открыть личный кабинет',
+            'url': cabinet_url,
+        }]]})
+
     try:
         source = photo_file_id or photo_url
         if source:
@@ -74,7 +81,10 @@ def send_message(token: str, chat_id: str, text: str, photo_url: str = None,
             ok = bool(data.get('ok'))
             return (ok, f'фото не ушло: {note[:200]}' if ok else note[:300], '')
 
-        data = call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
+        params = {'chat_id': chat_id, 'text': text}
+        if keyboard:
+            params['reply_markup'] = keyboard
+        data = call_telegram(token, 'sendMessage', params)
         return (bool(data.get('ok')), None if data.get('ok') else str(data.get('description')), '')
     except Exception as exc:
         return (False, str(exc)[:400], '')
@@ -110,7 +120,7 @@ def send_expiry_reminders(cur, schema: str, token: str) -> int:
         client_text = (
             f"Ваше объявление скоро перестанет публиковаться\n\n"
             f"Город: {city}\nОкончание: {until}\n\n{preview}\n\n"
-            f"Чтобы продолжить показы, продлите тариф.{status_link}"
+            f"Чтобы продолжить показы, продлите тариф в личном кабинете."
         )
 
         if admin_chat:
@@ -121,7 +131,9 @@ def send_expiry_reminders(cur, schema: str, token: str) -> int:
             notes.append('админ: не задан чат')
 
         if client_chat_id:
-            ok, err, _ = send_message(token, client_chat_id, client_text)
+            cabinet = f'{site}/status/{public_token}' if site and public_token else ''
+            ok, err, _ = send_message(token, client_chat_id, client_text,
+                                      cabinet_url=cabinet)
             if not ok:
                 notes.append(f'клиент: {err}')
         else:
@@ -185,9 +197,27 @@ def handler(event: dict, context) -> dict:
 
     cur.execute(
         f"UPDATE {schema}.campaigns SET state = 'expired', stopped_at = CURRENT_TIMESTAMP "
-        f"WHERE state = 'running' AND expires_at IS NOT NULL AND expires_at <= CURRENT_TIMESTAMP"
+        f"WHERE state = 'running' AND expires_at IS NOT NULL AND expires_at <= CURRENT_TIMESTAMP "
+        f"RETURNING request_id"
     )
-    expired = cur.rowcount or 0
+    expired_rows = cur.fetchall()
+    expired = len(expired_rows)
+
+    if expired_rows:
+        site_url = os.environ.get('SITE_URL', '').rstrip('/')
+        ids = ', '.join(str(int(r[0])) for r in expired_rows)
+        cur.execute(
+            f"SELECT id, city, client_chat_id, public_token FROM {schema}.ad_requests "
+            f"WHERE id IN ({ids}) AND client_chat_id IS NOT NULL"
+        )
+        for req_id, city, chat, pub_token in cur.fetchall():
+            cabinet = f'{site_url}/status/{pub_token}' if site_url and pub_token else ''
+            send_message(
+                token, chat,
+                f'Показы объявления ({city}) закончились.\n\n'
+                f'Чтобы возобновить публикации, продлите тариф в личном кабинете.',
+                cabinet_url=cabinet,
+            )
 
     try:
         reminders = send_expiry_reminders(cur, schema, token)

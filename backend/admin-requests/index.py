@@ -44,6 +44,7 @@ def list_data(cur, schema: str) -> dict:
         f"r.pref_start_hour, r.pref_end_hour, r.public_token, r.photo_url, r.client_notified, "
         f"r.client_chat_id, r.pending_ad_text, r.pending_photo_url, r.pending_photo_clear, "
         f"r.pending_at, r.client_name, r.client_username, r.plan, "
+        f"r.renew_plan, r.renew_at, "
         f"c.id, c.state, c.posts_sent, c.last_sent_at, c.last_error, c.expires_at, "
         f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until, "
         f"c.price_amount, c.paid_at, c.days_paid, "
@@ -77,22 +78,26 @@ def list_data(cur, schema: str) -> dict:
             'client_name': row[16],
             'client_username': row[17],
             'plan': row[18],
-            'campaign': None if row[19] is None else {
-                'id': row[19],
-                'state': row[20],
-                'posts_sent': row[21],
-                'last_sent_at': row[22],
-                'last_error': row[23],
-                'expires_at': row[24],
-                'interval_minutes': row[25],
-                'window_start_hour': row[26],
-                'window_end_hour': row[27],
-                'paused_until': row[28],
-                'price_amount': float(row[29]) if row[29] is not None else None,
-                'paid_at': row[30],
-                'days_paid': row[31],
+            'renew': None if row[20] is None else {
+                'plan': row[19],
+                'created_at': row[20],
             },
-            'total_paid': float(row[32] or 0),
+            'campaign': None if row[21] is None else {
+                'id': row[21],
+                'state': row[22],
+                'posts_sent': row[23],
+                'last_sent_at': row[24],
+                'last_error': row[25],
+                'expires_at': row[26],
+                'interval_minutes': row[27],
+                'window_start_hour': row[28],
+                'window_end_hour': row[29],
+                'paused_until': row[30],
+                'price_amount': float(row[31]) if row[31] is not None else None,
+                'paid_at': row[32],
+                'days_paid': row[33],
+            },
+            'total_paid': float(row[34] or 0),
         })
 
     cur.execute(
@@ -125,13 +130,14 @@ def list_data(cur, schema: str) -> dict:
 def deliver_to_client(cur, schema: str, request_id: int, text: str) -> dict:
     """Шлёт клиенту сообщение в Telegram и сохраняет его в переписке"""
     cur.execute(
-        f"SELECT client_chat_id, contact FROM {schema}.ad_requests WHERE id = {request_id}"
+        f"SELECT client_chat_id, contact, public_token FROM {schema}.ad_requests "
+        f"WHERE id = {request_id}"
     )
     row = cur.fetchone()
     if not row:
         return json_response(404, {'error': 'Заявка не найдена'})
 
-    chat_id, contact = row
+    chat_id, contact, public_token = row
     if not chat_id:
         return json_response(400, {
             'error': f'Клиент {contact} не запускал бота — доставить сообщение нельзя'
@@ -141,8 +147,16 @@ def deliver_to_client(cur, schema: str, request_id: int, text: str) -> dict:
     if not token:
         return json_response(500, {'error': 'Бот не настроен'})
 
+    site = os.environ.get('SITE_URL', '').rstrip('/')
+    params = {'chat_id': chat_id, 'text': text}
+    if site and public_token:
+        params['reply_markup'] = json.dumps({'inline_keyboard': [[{
+            'text': 'Открыть личный кабинет',
+            'url': f'{site}/status/{public_token}',
+        }]]})
+
     try:
-        data = call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text}, budget=6.0)
+        data = call_telegram(token, 'sendMessage', params, budget=6.0)
     except Exception as exc:
         return json_response(502, {'error': f'Telegram недоступен: {str(exc)[:200]}'})
 
@@ -381,12 +395,43 @@ def handler(event: dict, context) -> dict:
                 f"WHERE id = {campaign_id} RETURNING request_id"
             )
             row = cur.fetchone()
-            if row and amount:
+            if row:
+                request_id = row[0]
+                if amount:
+                    cur.execute(
+                        f"INSERT INTO {schema}.payments "
+                        f"(campaign_id, request_id, amount, days, kind, note) VALUES "
+                        f"({campaign_id}, {request_id}, {amount}, {days}, 'extend', '{note}')"
+                    )
                 cur.execute(
-                    f"INSERT INTO {schema}.payments "
-                    f"(campaign_id, request_id, amount, days, kind, note) VALUES "
-                    f"({campaign_id}, {row[0]}, {amount}, {days}, 'extend', '{note}')"
+                    f"UPDATE {schema}.ad_requests SET renew_plan = NULL, renew_at = NULL "
+                    f"WHERE id = {request_id}"
                 )
+
+                cur.execute(
+                    f"SELECT client_chat_id, public_token, city FROM {schema}.ad_requests "
+                    f"WHERE id = {request_id}"
+                )
+                info = cur.fetchone()
+                token_bot = os.environ.get('TELEGRAM_BOT_TOKEN')
+                site = os.environ.get('SITE_URL', '').rstrip('/')
+                if info and info[0] and token_bot:
+                    msg = (f'Показы продлены на {days} дн. Объявление ({info[2]}) '
+                           f'продолжает публиковаться.')
+                    params = {'chat_id': info[0], 'text': msg}
+                    if site and info[1]:
+                        params['reply_markup'] = json.dumps({'inline_keyboard': [[{
+                            'text': 'Открыть личный кабинет',
+                            'url': f'{site}/status/{info[1]}',
+                        }]]})
+                    try:
+                        call_telegram(token_bot, 'sendMessage', params, budget=5.0)
+                        cur.execute(
+                            f"INSERT INTO {schema}.client_messages (request_id, direction, text) "
+                            f"VALUES ({request_id}, 'out', '{esc(msg)}')"
+                        )
+                    except Exception:
+                        pass
             return json_response(200, {'ok': True})
 
         if action == 'save_group':

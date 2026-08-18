@@ -18,6 +18,13 @@ PHOTO_TYPES = {
 }
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
+PLANS = {
+    'hour': ('Час', 300, 1),
+    'day': ('Сутки', 2000, 1),
+    'week': ('Неделя', 5000, 7),
+    'month': ('Месяц', 10000, 30),
+}
+
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -82,6 +89,25 @@ def notify_admin_edit(city: str, request_id: int) -> None:
         pass
 
 
+def notify_admin_renew(city: str, request_id: int, plan_label: str, price: int) -> None:
+    """Сообщает админу, что клиент хочет продлить показы"""
+    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_ADMIN_CHAT_ID')
+    if not token or not chat_id:
+        return
+    site = os.environ.get('SITE_URL', '').rstrip('/')
+    link = f"\n{site}/admin" if site else ''
+    try:
+        call_telegram(token, 'sendMessage', {
+            'chat_id': chat_id,
+            'text': f"Заявка на продление #{request_id} ({city})\n"
+                    f"Тариф: {plan_label} — {price} ₽\n"
+                    f"Подтвердите продление в админке.{link}",
+        }, budget=4.0)
+    except Exception:
+        pass
+
+
 def handler(event: dict, context) -> dict:
     """Публичные данные: список городов для формы заявки и статус объявления по личной ссылке"""
     method = event.get('httpMethod', 'GET')
@@ -113,6 +139,7 @@ def handler(event: dict, context) -> dict:
             f"c.state, c.posts_sent, c.last_sent_at, c.expires_at, c.interval_minutes, c.id, "
             f"c.paused_until, r.pending_ad_text, r.pending_photo_url, r.pending_photo_clear, "
             f"r.pending_at, r.pending_rejected_at, c.price_amount, c.days_paid, "
+            f"r.renew_plan, r.renew_at, r.plan, "
             f"COALESCE((SELECT SUM(p.amount) FROM {schema}.payments p "
             f"          WHERE p.request_id = r.id), 0) "
             f"FROM {schema}.ad_requests r "
@@ -159,6 +186,26 @@ def handler(event: dict, context) -> dict:
                     f"WHERE id = {int(row[0])}"
                 )
                 notify_admin_edit(row[1], row[0])
+                return json_response(200, {'ok': True})
+
+            if action == 'renew':
+                plan = (body.get('plan') or '').strip().lower()
+                if plan not in PLANS:
+                    return json_response(400, {'error': 'Выберите тариф'})
+
+                cur.execute(
+                    f"UPDATE {schema}.ad_requests SET renew_plan = '{plan}', "
+                    f"renew_at = CURRENT_TIMESTAMP WHERE id = {int(row[0])}"
+                )
+                label, price, _ = PLANS[plan]
+                notify_admin_renew(row[1], row[0], label, price)
+                return json_response(200, {'ok': True})
+
+            if action == 'cancel_renew':
+                cur.execute(
+                    f"UPDATE {schema}.ad_requests SET renew_plan = NULL, renew_at = NULL "
+                    f"WHERE id = {int(row[0])}"
+                )
                 return json_response(200, {'ok': True})
 
             if action == 'cancel_edit':
@@ -222,8 +269,13 @@ def handler(event: dict, context) -> dict:
                 'created_at': row[18],
             },
             'edit_rejected_at': row[19],
-            'total_paid': float(row[22] or 0),
+            'total_paid': float(row[25] or 0),
             'days_paid': row[21],
+            'plan': row[24],
+            'renew': None if row[23] is None else {
+                'plan': row[22],
+                'created_at': row[23],
+            },
             'campaign': None if row[8] is None else {
                 'state': row[8],
                 'posts_sent': row[9],

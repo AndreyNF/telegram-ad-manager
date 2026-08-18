@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { API, formatDate, hourLabel, BOT_URL } from '@/lib/api';
 import EditAd from '@/components/site/EditAd';
+import RenewPlan from '@/components/site/RenewPlan';
 
 interface StatusData {
   id: number;
@@ -22,6 +23,8 @@ interface StatusData {
   edit_rejected_at: string | null;
   total_paid: number;
   days_paid: number | null;
+  plan: string | null;
+  renew: { plan: string; created_at: string } | null;
   campaign: {
     state: string;
     posts_sent: number;
@@ -281,6 +284,16 @@ const Status = () => {
               Публикуется предыдущая версия — можно отправить новый вариант.
             </span>
           </div>
+        )}
+
+        {c && (
+          <RenewPlan
+            currentPlan={data.plan}
+            renew={data.renew}
+            expiresAt={c.expires_at}
+            busy={busy}
+            onAction={act}
+          />
         )}
 
         {c && c.state !== 'expired' && (

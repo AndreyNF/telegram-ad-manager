@@ -19,6 +19,7 @@ const stateColor = (state?: string) => {
 
 const RequestCard = ({ item, busy, password, onAction }: Props) => {
   const plan = item.plan ? PLAN_INFO[item.plan] : undefined;
+  const renewPlan = item.renew ? PLAN_INFO[item.renew.plan] : undefined;
   const [days, setDays] = useState(plan?.days ?? 30);
   const [interval, setInterval] = useState(15);
   const [open, setOpen] = useState(false);
@@ -113,6 +114,40 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
           </button>
         )}
       </div>
+
+      {item.renew && renewPlan && (
+        <div
+          className="flex flex-wrap items-center gap-4 p-4"
+          style={{ background: 'var(--hero-surface)', border: '1px solid var(--hero-accent)' }}
+        >
+          <div className="flex items-center gap-2" style={{ color: 'var(--hero-accent)' }}>
+            <Icon name="RefreshCw" size={16} />
+            <span className="text-sm uppercase" style={{ fontFamily: 'var(--hero-font-head)' }}>
+              Просит продлить: {renewPlan.label} · {renewPlan.price.toLocaleString('ru-RU')} ₽
+            </span>
+          </div>
+          <span className="text-sm" style={{ color: 'var(--hero-muted)' }}>
+            {formatDate(item.renew.created_at)}
+          </span>
+          {c && (
+            <button
+              className="btn btn-primary"
+              disabled={busy}
+              style={{ padding: '9px 18px', fontSize: '0.72em', marginLeft: 'auto' }}
+              onClick={() =>
+                onAction({
+                  action: 'extend',
+                  campaign_id: c.id,
+                  days: renewPlan.days,
+                  amount: renewPlan.price,
+                })
+              }
+            >
+              Подтвердить продление
+            </button>
+          )}
+        </div>
+      )}
 
       {item.pending && (
         <div

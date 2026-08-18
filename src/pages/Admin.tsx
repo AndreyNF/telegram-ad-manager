@@ -8,7 +8,7 @@ import { AdRequest, CityGroup } from '@/components/admin/types';
 
 const FILTERS = [
   { key: 'new', label: 'Новые' },
-  { key: 'edits', label: 'Правки' },
+  { key: 'edits', label: 'Требуют решения' },
   { key: 'running', label: 'Крутятся' },
   { key: 'stopped', label: 'Остановлены' },
   { key: 'all', label: 'Все' },
@@ -142,7 +142,7 @@ const Admin = () => {
   const visible = requests.filter((r) => {
     if (filter === 'all') return true;
     if (filter === 'new') return r.status === 'new' && !r.campaign;
-    if (filter === 'edits') return Boolean(r.pending);
+    if (filter === 'edits') return Boolean(r.pending || r.renew);
     if (filter === 'running') return r.campaign?.state === 'running';
     if (filter === 'stopped')
       return r.campaign && ['stopped', 'expired'].includes(r.campaign.state);
@@ -151,7 +151,7 @@ const Admin = () => {
 
   const stats = {
     newCount: requests.filter((r) => r.status === 'new' && !r.campaign).length,
-    edits: requests.filter((r) => r.pending).length,
+    edits: requests.filter((r) => r.pending || r.renew).length,
     running: requests.filter((r) => r.campaign?.state === 'running').length,
     posts: requests.reduce((sum, r) => sum + (r.campaign?.posts_sent || 0), 0),
     revenue: requests.reduce((sum, r) => sum + (r.total_paid || 0), 0),

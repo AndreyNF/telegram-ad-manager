@@ -31,6 +31,7 @@ export interface AdRequest {
   client_name: string | null;
   client_username: string | null;
   plan: string | null;
+  renew: { plan: string; created_at: string } | null;
   total_paid: number;
   campaign: Campaign | null;
 }
