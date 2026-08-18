@@ -126,10 +126,13 @@ def handler(event: dict, context) -> dict:
     try:
         if not token:
             cur.execute(
-                f"SELECT city, members, slots FROM {schema}.city_groups "
+                f"SELECT city, members, slots, tz_offset FROM {schema}.city_groups "
                 f"WHERE is_active = true ORDER BY sort_order, city"
             )
-            cities = [{'city': r[0], 'members': r[1], 'slots': r[2]} for r in cur.fetchall()]
+            cities = [
+                {'city': r[0], 'members': r[1], 'slots': r[2], 'tz_offset': r[3]}
+                for r in cur.fetchall()
+            ]
             return json_response(200, {'cities': cities})
 
         safe_token = token.replace("'", "''")[:40]
@@ -139,11 +142,12 @@ def handler(event: dict, context) -> dict:
             f"c.state, c.posts_sent, c.last_sent_at, c.expires_at, c.interval_minutes, c.id, "
             f"c.paused_until, r.pending_ad_text, r.pending_photo_url, r.pending_photo_clear, "
             f"r.pending_at, r.pending_rejected_at, c.price_amount, c.days_paid, "
-            f"r.renew_plan, r.renew_at, r.plan, "
+            f"r.renew_plan, r.renew_at, r.plan, COALESCE(c.tz_offset, g.tz_offset, 3), "
             f"COALESCE((SELECT SUM(p.amount) FROM {schema}.payments p "
             f"          WHERE p.request_id = r.id), 0) "
             f"FROM {schema}.ad_requests r "
             f"LEFT JOIN {schema}.campaigns c ON c.request_id = r.id AND c.state <> 'archived' "
+            f"LEFT JOIN {schema}.city_groups g ON g.city = r.city "
             f"WHERE r.public_token = '{safe_token}' LIMIT 1"
         )
         row = cur.fetchone()
@@ -269,9 +273,10 @@ def handler(event: dict, context) -> dict:
                 'created_at': row[18],
             },
             'edit_rejected_at': row[19],
-            'total_paid': float(row[25] or 0),
+            'total_paid': float(row[26] or 0),
             'days_paid': row[21],
             'plan': row[24],
+            'tz_offset': row[25],
             'renew': None if row[23] is None else {
                 'plan': row[22],
                 'created_at': row[23],

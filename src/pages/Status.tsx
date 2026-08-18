@@ -24,6 +24,7 @@ interface StatusData {
   total_paid: number;
   days_paid: number | null;
   plan: string | null;
+  tz_offset: number;
   renew: { plan: string; created_at: string } | null;
   campaign: {
     state: string;
@@ -158,6 +159,10 @@ const Status = () => {
           <span className="chip" style={{ color: 'var(--hero-muted)' }}>
             <Icon name="Clock" size={14} />
             {hourLabel(data.pref_start_hour)}—{hourLabel(data.pref_end_hour)}
+            {' · '}
+            {data.tz_offset === 3
+              ? 'МСК'
+              : `МСК${data.tz_offset > 3 ? '+' : ''}${data.tz_offset - 3}`}
           </span>
         </div>
 

@@ -16,7 +16,13 @@ const EMPTY = {
   slots: '',
   is_active: true,
   sort_order: 100,
+  tz_offset: 3,
 };
+
+const TZ_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+export const tzLabel = (tz: number) =>
+  tz === 3 ? 'МСК' : `МСК${tz > 3 ? '+' : ''}${tz - 3}`;
 
 const GroupsTab = ({ groups, busy, onAction }: Props) => {
   const [draft, setDraft] = useState<CityGroup>(EMPTY);
@@ -73,6 +79,23 @@ const GroupsTab = ({ groups, busy, onAction }: Props) => {
               onChange={(e) => setDraft({ ...draft, slots: e.target.value })}
             />
           </div>
+          <div>
+            <span className="label">Часовой пояс города</span>
+            <select
+              className="field"
+              value={draft.tz_offset}
+              onChange={(e) => setDraft({ ...draft, tz_offset: Number(e.target.value) })}
+            >
+              {TZ_OPTIONS.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tzLabel(tz)} (UTC+{tz})
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs" style={{ color: 'var(--hero-muted)' }}>
+              По нему считается время показа объявлений в этом городе.
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -102,12 +125,17 @@ const GroupsTab = ({ groups, busy, onAction }: Props) => {
                   {g.chat_id || 'ID группы не задан'}
                 </div>
               </div>
-              <span
-                className="chip"
-                style={{ color: g.is_active ? 'var(--hero-x-quarter)' : 'var(--hero-muted)' }}
-              >
-                {g.is_active ? 'Показывается' : 'Скрыт'}
-              </span>
+              <div className="flex flex-col items-end gap-2">
+                <span
+                  className="chip"
+                  style={{ color: g.is_active ? 'var(--hero-x-quarter)' : 'var(--hero-muted)' }}
+                >
+                  {g.is_active ? 'Показывается' : 'Скрыт'}
+                </span>
+                <span className="chip" style={{ color: 'var(--hero-muted)' }}>
+                  {tzLabel(g.tz_offset)}
+                </span>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-2">

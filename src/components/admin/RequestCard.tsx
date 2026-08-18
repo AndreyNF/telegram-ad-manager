@@ -3,6 +3,7 @@ import Icon from '@/components/ui/icon';
 import { formatDate, hourLabel } from '@/lib/api';
 import { AdRequest, PLAN_INFO, STATE_LABELS, STATUS_LABELS } from './types';
 import ClientChat from './ClientChat';
+import { tzLabel } from './GroupsTab';
 
 interface Props {
   item: AdRequest;
@@ -73,6 +74,7 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
             <span className="flex items-center gap-2">
               <Icon name="Clock" size={14} />
               {hourLabel(item.pref_start_hour)}—{hourLabel(item.pref_end_hour)}
+              {c ? ` · ${tzLabel(c.tz_offset)}` : ''}
             </span>
             <span className="flex items-center gap-2">
               <Icon name="Calendar" size={14} />

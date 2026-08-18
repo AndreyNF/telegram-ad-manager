@@ -29,6 +29,13 @@ const PostForm = () => {
     }
   }, [cities]);
 
+  const selectedCity = cities.find((c) => c.city === form.city);
+  const tzLabel = selectedCity
+    ? selectedCity.tz_offset === 3
+      ? 'МСК'
+      : `МСК${selectedCity.tz_offset > 3 ? '+' : ''}${selectedCity.tz_offset - 3}`
+    : '';
+
   const pickPhoto = (file: File | undefined) => {
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
@@ -228,7 +235,9 @@ const PostForm = () => {
               </select>
             </div>
             <p className="mt-2 text-xs" style={{ color: 'var(--hero-muted)' }}>
-              Вне этого промежутка объявление публиковаться не будет.
+              Время местное — по часовому поясу города {form.city || 'публикации'}
+              {tzLabel ? ` (${tzLabel})` : ''}. Вне этого промежутка объявление публиковаться
+              не будет.
             </p>
           </div>
 

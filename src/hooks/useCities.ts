@@ -5,6 +5,7 @@ export interface City {
   city: string;
   members: string;
   slots: string;
+  tz_offset: number;
 }
 
 const useCities = () => {

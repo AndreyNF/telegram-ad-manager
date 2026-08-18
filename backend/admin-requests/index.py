@@ -47,7 +47,7 @@ def list_data(cur, schema: str) -> dict:
         f"r.renew_plan, r.renew_at, "
         f"c.id, c.state, c.posts_sent, c.last_sent_at, c.last_error, c.expires_at, "
         f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until, "
-        f"c.price_amount, c.paid_at, c.days_paid, "
+        f"c.price_amount, c.paid_at, c.days_paid, c.tz_offset, "
         f"COALESCE((SELECT SUM(p.amount) FROM {schema}.payments p "
         f"          WHERE p.request_id = r.id), 0) "
         f"FROM {schema}.ad_requests r "
@@ -96,12 +96,13 @@ def list_data(cur, schema: str) -> dict:
                 'price_amount': float(row[31]) if row[31] is not None else None,
                 'paid_at': row[32],
                 'days_paid': row[33],
+                'tz_offset': row[34],
             },
-            'total_paid': float(row[34] or 0),
+            'total_paid': float(row[35] or 0),
         })
 
     cur.execute(
-        f"SELECT id, city, chat_id, members, slots, is_active, sort_order "
+        f"SELECT id, city, chat_id, members, slots, is_active, sort_order, tz_offset "
         f"FROM {schema}.city_groups ORDER BY sort_order, city"
     )
     groups = [{
@@ -112,6 +113,7 @@ def list_data(cur, schema: str) -> dict:
         'slots': g[4],
         'is_active': g[5],
         'sort_order': g[6],
+        'tz_offset': g[7],
     } for g in cur.fetchall()]
 
     cur.execute(
@@ -293,13 +295,15 @@ def handler(event: dict, context) -> dict:
             interval = max(5, min(interval, 1440))
 
             cur.execute(
-                f"SELECT city, pref_start_hour, pref_end_hour FROM {schema}.ad_requests "
-                f"WHERE id = {request_id}"
+                f"SELECT r.city, r.pref_start_hour, r.pref_end_hour, "
+                f"COALESCE(g.tz_offset, 3) FROM {schema}.ad_requests r "
+                f"LEFT JOIN {schema}.city_groups g ON g.city = r.city "
+                f"WHERE r.id = {request_id}"
             )
             row = cur.fetchone()
             if not row:
                 return json_response(404, {'error': 'Заявка не найдена'})
-            city, win_start, win_end = row
+            city, win_start, win_end, tz_offset = row
 
             cur.execute(
                 f"UPDATE {schema}.campaigns SET state = 'archived' "
@@ -312,10 +316,12 @@ def handler(event: dict, context) -> dict:
             cur.execute(
                 f"INSERT INTO {schema}.campaigns "
                 f"(request_id, city, interval_minutes, state, next_run_at, days_paid, expires_at, "
-                f"window_start_hour, window_end_hour, price_amount, paid_at, payment_note) VALUES "
+                f"window_start_hour, window_end_hour, tz_offset, price_amount, paid_at, "
+                f"payment_note) VALUES "
                 f"({request_id}, '{esc(city)}', {interval}, 'running', CURRENT_TIMESTAMP, {days}, "
                 f"CURRENT_TIMESTAMP + INTERVAL '{days} days', {win_start}, {win_end}, "
-                f"{amount if amount else 'NULL'}, {paid_sql}, '{note}') RETURNING id"
+                f"{int(tz_offset)}, {amount if amount else 'NULL'}, {paid_sql}, '{note}') "
+                f"RETURNING id"
             )
             campaign_id = cur.fetchone()[0]
             if amount:
@@ -442,6 +448,7 @@ def handler(event: dict, context) -> dict:
             slots = esc(body.get('slots', ''))[:64]
             is_active = 'true' if body.get('is_active', True) else 'false'
             sort_order = int(body.get('sort_order', 100))
+            tz_offset = max(2, min(int(body.get('tz_offset', 3) or 3), 12))
 
             if not city:
                 return json_response(400, {'error': 'Укажите город'})
@@ -450,12 +457,19 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     f"UPDATE {schema}.city_groups SET city = '{city}', chat_id = '{chat_id}', "
                     f"members = '{members}', slots = '{slots}', is_active = {is_active}, "
-                    f"sort_order = {sort_order} WHERE id = {int(group_id)}"
+                    f"sort_order = {sort_order}, tz_offset = {tz_offset} "
+                    f"WHERE id = {int(group_id)}"
+                )
+                cur.execute(
+                    f"UPDATE {schema}.campaigns SET tz_offset = {tz_offset} "
+                    f"WHERE city = '{city}' AND state <> 'archived'"
                 )
             else:
                 cur.execute(
-                    f"INSERT INTO {schema}.city_groups (city, chat_id, members, slots, is_active, sort_order) "
-                    f"VALUES ('{city}', '{chat_id}', '{members}', '{slots}', {is_active}, {sort_order})"
+                    f"INSERT INTO {schema}.city_groups "
+                    f"(city, chat_id, members, slots, is_active, sort_order, tz_offset) "
+                    f"VALUES ('{city}', '{chat_id}', '{members}', '{slots}', {is_active}, "
+                    f"{sort_order}, {tz_offset})"
                 )
             return json_response(200, {'ok': True})
 

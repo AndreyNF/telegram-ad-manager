@@ -12,6 +12,7 @@ export interface Campaign {
   price_amount: number | null;
   paid_at: string | null;
   days_paid: number | null;
+  tz_offset: number;
 }
 
 export interface AdRequest {
@@ -57,6 +58,7 @@ export interface CityGroup {
   slots: string;
   is_active: boolean;
   sort_order: number;
+  tz_offset: number;
 }
 
 export const STATE_LABELS: Record<string, string> = {
