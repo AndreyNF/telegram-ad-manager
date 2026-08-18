@@ -20,11 +20,17 @@ def send_message(token: str, chat_id: str, text: str, photo_url: str = None) -> 
     """Отправляет сообщение или фото с подписью в чат"""
     try:
         if photo_url:
+            fits = len(text) <= 1024
             data = call_telegram(token, 'sendPhoto', {
                 'chat_id': chat_id,
                 'photo': photo_url,
-                'caption': text[:1000],
+                'caption': text if fits else '',
             })
+            if data.get('ok'):
+                if not fits:
+                    call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
+                return (True, None)
+            data = call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
         else:
             data = call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
         return (bool(data.get('ok')), None if data.get('ok') else str(data.get('description')))
