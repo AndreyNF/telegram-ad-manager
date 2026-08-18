@@ -18,6 +18,13 @@ PHOTO_TYPES = {
 }
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
+PLAN_LABELS = {
+    'hour': ('Час', 300, 1),
+    'day': ('Сутки', 2000, 1),
+    'week': ('Неделя', 5000, 7),
+    'month': ('Месяц', 10000, 30),
+}
+
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -55,7 +62,8 @@ def upload_photo(photo: dict) -> str:
     return f'https://cdn.poehali.dev/projects/{access_key}/bucket/{key}'
 
 
-def notify_telegram(city, contact, ad_text, window='', public_token='', photo_url=None, client_notified=False):
+def notify_telegram(city, contact, ad_text, window='', public_token='', photo_url=None,
+                    client_notified=False, plan=''):
     """Уведомляет администратора о новой заявке"""
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     chat_id = os.environ.get('TELEGRAM_ADMIN_CHAT_ID')
@@ -65,8 +73,10 @@ def notify_telegram(city, contact, ad_text, window='', public_token='', photo_ur
     site = os.environ.get('SITE_URL', '').rstrip('/')
     link = f"\nСтатус: {site}/status/{public_token}" if site and public_token else ''
     reach_note = '' if client_notified else '\n⚠️ Клиенту ссылку в личку отправить не удалось (не запускал бота)'
+    plan_info = PLAN_LABELS.get(plan)
+    plan_note = f"\nТариф: {plan_info[0]} — {plan_info[1]} ₽" if plan_info else ''
     text = (
-        f"Новая заявка\n\nГород: {city}\nTelegram: {contact}\n"
+        f"Новая заявка\n\nГород: {city}\nTelegram: {contact}{plan_note}\n"
         f"Время показа: {window}{link}{reach_note}\n\n{ad_text}"
     )
 
@@ -207,11 +217,15 @@ def handler(event: dict, context) -> dict:
     token = uuid.uuid4().hex
     photo_sql = f"'{photo_url}'" if photo_url else 'NULL'
 
+    plan = (body.get('plan') or '').strip().lower()
+    if plan not in PLAN_LABELS:
+        plan = 'week'
+
     cur.execute(
         f"INSERT INTO {schema}.ad_requests "
-        f"(city, contact, ad_text, pref_start_hour, pref_end_hour, public_token, photo_url) "
+        f"(city, contact, ad_text, pref_start_hour, pref_end_hour, public_token, photo_url, plan) "
         f"VALUES ('{safe_city}', '{safe_contact}', '{safe_text}', {start_hour}, {end_hour}, "
-        f"'{token}', {photo_sql}) RETURNING id"
+        f"'{token}', {photo_sql}, '{plan}') RETURNING id"
     )
     request_id = cur.fetchone()[0]
 
@@ -236,7 +250,8 @@ def handler(event: dict, context) -> dict:
     conn.close()
 
     try:
-        notify_telegram(city, contact, ad_text, window_str, token, photo_url, client_notified)
+        notify_telegram(city, contact, ad_text, window_str, token, photo_url,
+                        client_notified, plan)
     except Exception:
         pass
 

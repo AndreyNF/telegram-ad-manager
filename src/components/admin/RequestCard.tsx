@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { formatDate, hourLabel } from '@/lib/api';
-import { AdRequest, STATE_LABELS, STATUS_LABELS } from './types';
+import { AdRequest, PLAN_INFO, STATE_LABELS, STATUS_LABELS } from './types';
 import ClientChat from './ClientChat';
 
 interface Props {
@@ -18,11 +18,12 @@ const stateColor = (state?: string) => {
 };
 
 const RequestCard = ({ item, busy, password, onAction }: Props) => {
-  const [days, setDays] = useState(30);
+  const plan = item.plan ? PLAN_INFO[item.plan] : undefined;
+  const [days, setDays] = useState(plan?.days ?? 30);
   const [interval, setInterval] = useState(15);
   const [open, setOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(plan ? String(plan.price) : '');
 
   const c = item.campaign;
   const isPaused = Boolean(c?.paused_until && new Date(c.paused_until) > new Date());
@@ -40,6 +41,11 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
             <span className="chip" style={{ color: 'var(--hero-muted)' }}>
               {STATUS_LABELS[item.status] || item.status}
             </span>
+            {plan && (
+              <span className="chip" style={{ color: 'var(--hero-accent)' }}>
+                {plan.label} · {plan.price.toLocaleString('ru-RU')} ₽
+              </span>
+            )}
             {c && (
               <span className="chip" style={{ color: isPaused ? 'var(--hero-accent)' : stateColor(c.state) }}>
                 {isPaused ? 'На паузе' : STATE_LABELS[c.state] || c.state}

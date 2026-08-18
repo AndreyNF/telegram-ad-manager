@@ -30,6 +30,7 @@ export interface AdRequest {
   pending: PendingEdit | null;
   client_name: string | null;
   client_username: string | null;
+  plan: string | null;
   total_paid: number;
   campaign: Campaign | null;
 }
@@ -62,6 +63,13 @@ export const STATE_LABELS: Record<string, string> = {
   stopped: 'Остановлено',
   expired: 'Срок вышел',
   archived: 'В архиве',
+};
+
+export const PLAN_INFO: Record<string, { label: string; price: number; days: number }> = {
+  hour: { label: 'Час', price: 300, days: 1 },
+  day: { label: 'Сутки', price: 2000, days: 1 },
+  week: { label: 'Неделя', price: 5000, days: 7 },
+  month: { label: 'Месяц', price: 10000, days: 30 },
 };
 
 export const STATUS_LABELS: Record<string, string> = {

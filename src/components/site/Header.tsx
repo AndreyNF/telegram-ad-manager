@@ -23,6 +23,7 @@ const Header = () => (
         {[
           { href: '#how', label: 'Как работает' },
           { href: '#cities', label: 'Города' },
+          { href: '#pricing', label: 'Тарифы' },
         ].map((l) => (
           <a
             key={l.href}

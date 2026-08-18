@@ -43,7 +43,7 @@ def list_data(cur, schema: str) -> dict:
         f"SELECT r.id, r.city, r.contact, r.ad_text, r.status, r.created_at, "
         f"r.pref_start_hour, r.pref_end_hour, r.public_token, r.photo_url, r.client_notified, "
         f"r.client_chat_id, r.pending_ad_text, r.pending_photo_url, r.pending_photo_clear, "
-        f"r.pending_at, r.client_name, r.client_username, "
+        f"r.pending_at, r.client_name, r.client_username, r.plan, "
         f"c.id, c.state, c.posts_sent, c.last_sent_at, c.last_error, c.expires_at, "
         f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until, "
         f"c.price_amount, c.paid_at, c.days_paid, "
@@ -76,22 +76,23 @@ def list_data(cur, schema: str) -> dict:
             },
             'client_name': row[16],
             'client_username': row[17],
-            'campaign': None if row[18] is None else {
-                'id': row[18],
-                'state': row[19],
-                'posts_sent': row[20],
-                'last_sent_at': row[21],
-                'last_error': row[22],
-                'expires_at': row[23],
-                'interval_minutes': row[24],
-                'window_start_hour': row[25],
-                'window_end_hour': row[26],
-                'paused_until': row[27],
-                'price_amount': float(row[28]) if row[28] is not None else None,
-                'paid_at': row[29],
-                'days_paid': row[30],
+            'plan': row[18],
+            'campaign': None if row[19] is None else {
+                'id': row[19],
+                'state': row[20],
+                'posts_sent': row[21],
+                'last_sent_at': row[22],
+                'last_error': row[23],
+                'expires_at': row[24],
+                'interval_minutes': row[25],
+                'window_start_hour': row[26],
+                'window_end_hour': row[27],
+                'paused_until': row[28],
+                'price_amount': float(row[29]) if row[29] is not None else None,
+                'paid_at': row[30],
+                'days_paid': row[31],
             },
-            'total_paid': float(row[31] or 0),
+            'total_paid': float(row[32] or 0),
         })
 
     cur.execute(

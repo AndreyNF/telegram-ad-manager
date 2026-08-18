@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import useCities from '@/hooks/useCities';
 import { API, BOT_URL, hourLabel } from '@/lib/api';
+import { PLANS } from './Pricing';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -19,6 +20,7 @@ const PostForm = () => {
     text: '',
     start_hour: 9,
     end_hour: 21,
+    plan: 'week',
   });
 
   useEffect(() => {
@@ -53,7 +55,14 @@ const PostForm = () => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Не удалось отправить заявку');
-      setForm({ city: cities[0]?.city || '', contact: '', text: '', start_hour: 9, end_hour: 21 });
+      setForm({
+        city: cities[0]?.city || '',
+        contact: '',
+        text: '',
+        start_hour: 9,
+        end_hour: 21,
+        plan: 'week',
+      });
       setPhoto(null);
       setStatusToken(data.token || '');
       setClientNotified(Boolean(data.client_notified));
@@ -220,6 +229,35 @@ const PostForm = () => {
             </div>
             <p className="mt-2 text-xs" style={{ color: 'var(--hero-muted)' }}>
               Вне этого промежутка объявление публиковаться не будет.
+            </p>
+          </div>
+
+          <div>
+            <span className="label">Тариф</span>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {PLANS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  className="flex items-center justify-between p-3 text-sm"
+                  style={{
+                    background: 'var(--hero-surface)',
+                    border: `1px solid ${
+                      form.plan === p.key ? 'var(--hero-accent)' : 'var(--hero-x-rule)'
+                    }`,
+                    color: form.plan === p.key ? 'var(--hero-text)' : 'var(--hero-muted)',
+                  }}
+                  onClick={() => setForm({ ...form, plan: p.key })}
+                >
+                  <span>{p.title}</span>
+                  <span style={{ fontFamily: 'var(--hero-font-head)' }}>
+                    {p.price.toLocaleString('ru-RU')} ₽
+                  </span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs" style={{ color: 'var(--hero-muted)' }}>
+              Оплата за это объявление. Реквизиты пришлём после модерации.
             </p>
           </div>
 
