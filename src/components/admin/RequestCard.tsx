@@ -95,6 +95,59 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
         )}
       </div>
 
+      {item.pending && (
+        <div
+          className="flex flex-col gap-3 p-4"
+          style={{ background: 'var(--hero-surface)', border: '1px solid var(--hero-accent)' }}
+        >
+          <div className="flex items-center gap-2" style={{ color: 'var(--hero-accent)' }}>
+            <Icon name="FilePen" size={16} />
+            <span className="text-sm uppercase" style={{ fontFamily: 'var(--hero-font-head)' }}>
+              Клиент прислал правки · {formatDate(item.pending.created_at)}
+            </span>
+          </div>
+
+          {item.pending.photo_clear ? (
+            <span className="chip" style={{ color: 'var(--hero-accent)' }}>
+              Просит удалить фото
+            </span>
+          ) : (
+            item.pending.photo_url && (
+              <a href={item.pending.photo_url} target="_blank" rel="noreferrer">
+                <img
+                  src={item.pending.photo_url}
+                  alt=""
+                  className="max-h-32 w-auto object-contain"
+                  style={{ border: '1px solid var(--hero-x-rule)' }}
+                />
+              </a>
+            )
+          )}
+
+          <div className="whitespace-pre-wrap text-sm">{item.pending.ad_text}</div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              className="btn btn-primary"
+              disabled={busy}
+              style={{ padding: '10px 20px', fontSize: '0.72em' }}
+              onClick={() => onAction({ action: 'approve_edit', id: item.id })}
+            >
+              <Icon name="Check" size={14} />
+              Принять правки
+            </button>
+            <button
+              className="btn btn-ghost"
+              disabled={busy}
+              style={{ padding: '10px 20px', fontSize: '0.72em' }}
+              onClick={() => onAction({ action: 'reject_edit', id: item.id })}
+            >
+              Отклонить правки
+            </button>
+          </div>
+        </div>
+      )}
+
       {c && (
         <div className="flex flex-wrap gap-4 text-sm" style={{ color: 'var(--hero-muted)' }}>
           <span>Опубликовано: {c.posts_sent}</span>

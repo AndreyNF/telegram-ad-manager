@@ -33,7 +33,8 @@ def list_data(cur, schema: str) -> dict:
     cur.execute(
         f"SELECT r.id, r.city, r.contact, r.ad_text, r.status, r.created_at, "
         f"r.pref_start_hour, r.pref_end_hour, r.public_token, r.photo_url, r.client_notified, "
-        f"r.client_chat_id, "
+        f"r.client_chat_id, r.pending_ad_text, r.pending_photo_url, r.pending_photo_clear, "
+        f"r.pending_at, "
         f"c.id, c.state, c.posts_sent, c.last_sent_at, c.last_error, c.expires_at, "
         f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until "
         f"FROM {schema}.ad_requests r "
@@ -55,17 +56,23 @@ def list_data(cur, schema: str) -> dict:
             'photo_url': row[9],
             'client_notified': row[10],
             'can_write': bool(row[11]),
-            'campaign': None if row[12] is None else {
-                'id': row[12],
-                'state': row[13],
-                'posts_sent': row[14],
-                'last_sent_at': row[15],
-                'last_error': row[16],
-                'expires_at': row[17],
-                'interval_minutes': row[18],
-                'window_start_hour': row[19],
-                'window_end_hour': row[20],
-                'paused_until': row[21],
+            'pending': None if row[15] is None else {
+                'ad_text': row[12],
+                'photo_url': row[13],
+                'photo_clear': row[14],
+                'created_at': row[15],
+            },
+            'campaign': None if row[16] is None else {
+                'id': row[16],
+                'state': row[17],
+                'posts_sent': row[18],
+                'last_sent_at': row[19],
+                'last_error': row[20],
+                'expires_at': row[21],
+                'interval_minutes': row[22],
+                'window_start_hour': row[23],
+                'window_end_hour': row[24],
+                'paused_until': row[25],
             },
         })
 
@@ -164,6 +171,59 @@ def handler(event: dict, context) -> dict:
 
         body = json.loads(event.get('body') or '{}')
         action = body.get('action', '')
+
+        if action in ('approve_edit', 'reject_edit'):
+            request_id = int(body.get('id', 0))
+            cur.execute(
+                f"SELECT pending_ad_text, pending_photo_url, pending_photo_clear, city "
+                f"FROM {schema}.ad_requests WHERE id = {request_id} AND pending_at IS NOT NULL"
+            )
+            row = cur.fetchone()
+            if not row:
+                return json_response(404, {'error': 'Правок нет'})
+
+            if action == 'approve_edit':
+                new_photo = row[1]
+                if row[2]:
+                    photo_set = "photo_url = NULL, photo_file_id = NULL"
+                elif new_photo:
+                    photo_set = f"photo_url = '{esc(new_photo)}', photo_file_id = NULL"
+                else:
+                    photo_set = "photo_url = photo_url"
+
+                cur.execute(
+                    f"UPDATE {schema}.ad_requests SET ad_text = '{esc(row[0])}', {photo_set}, "
+                    f"pending_ad_text = NULL, pending_photo_url = NULL, "
+                    f"pending_photo_clear = false, pending_at = NULL, pending_rejected_at = NULL "
+                    f"WHERE id = {request_id}"
+                )
+                note = f'Правки объявления ({row[3]}) одобрены — публикуем новую версию.'
+            else:
+                cur.execute(
+                    f"UPDATE {schema}.ad_requests SET pending_ad_text = NULL, "
+                    f"pending_photo_url = NULL, pending_photo_clear = false, pending_at = NULL, "
+                    f"pending_rejected_at = CURRENT_TIMESTAMP WHERE id = {request_id}"
+                )
+                note = (f'Правки объявления ({row[3]}) отклонены. '
+                        f'Продолжаем публиковать предыдущую версию.')
+
+            cur.execute(
+                f"SELECT client_chat_id FROM {schema}.ad_requests WHERE id = {request_id}"
+            )
+            chat = cur.fetchone()
+            token = os.environ.get('TELEGRAM_BOT_TOKEN')
+            if chat and chat[0] and token:
+                try:
+                    call_telegram(token, 'sendMessage',
+                                  {'chat_id': chat[0], 'text': note}, budget=5.0)
+                    cur.execute(
+                        f"INSERT INTO {schema}.client_messages (request_id, direction, text) "
+                        f"VALUES ({request_id}, 'out', '{esc(note)}')"
+                    )
+                except Exception:
+                    pass
+
+            return json_response(200, {'ok': True})
 
         if action == 'send_message':
             request_id = int(body.get('id', 0))

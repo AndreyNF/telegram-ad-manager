@@ -24,7 +24,15 @@ export interface AdRequest {
   photo_url: string | null;
   client_notified: boolean;
   can_write: boolean;
+  pending: PendingEdit | null;
   campaign: Campaign | null;
+}
+
+export interface PendingEdit {
+  ad_text: string;
+  photo_url: string | null;
+  photo_clear: boolean;
+  created_at: string;
 }
 
 export interface ClientMessage {

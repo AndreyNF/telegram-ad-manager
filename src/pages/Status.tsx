@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { API, formatDate, hourLabel, BOT_URL } from '@/lib/api';
+import EditAd from '@/components/site/EditAd';
 
 interface StatusData {
   id: number;
@@ -12,6 +13,13 @@ interface StatusData {
   photo_url: string | null;
   pref_start_hour: number;
   pref_end_hour: number;
+  pending: {
+    ad_text: string;
+    photo_url: string | null;
+    photo_clear: boolean;
+    created_at: string;
+  } | null;
+  edit_rejected_at: string | null;
   campaign: {
     state: string;
     posts_sent: number;
@@ -37,6 +45,7 @@ const Status = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pauseOpen, setPauseOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [customHours, setCustomHours] = useState(12);
 
   const load = useCallback(async () => {
@@ -68,6 +77,7 @@ const Status = () => {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Не удалось выполнить');
       setPauseOpen(false);
+      setEditOpen(false);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось выполнить');
@@ -167,17 +177,106 @@ const Status = () => {
         )}
 
         <div className="card mt-8">
-          <span className="label">Текст объявления</span>
-          {data.photo_url && (
-            <img
-              src={data.photo_url}
-              alt=""
-              className="mb-4 max-h-72 w-full object-contain"
-              style={{ border: '1px solid var(--hero-x-rule)' }}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="label" style={{ marginBottom: 0 }}>
+              Текст объявления
+            </span>
+            {!editOpen && !data.pending && (
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '8px 16px', fontSize: '0.72em' }}
+                onClick={() => setEditOpen(true)}
+              >
+                <Icon name="Pencil" size={14} />
+                Изменить
+              </button>
+            )}
+          </div>
+
+          {!editOpen && (
+            <div className="mt-4">
+              {data.photo_url && (
+                <img
+                  src={data.photo_url}
+                  alt=""
+                  className="mb-4 max-h-72 w-full object-contain"
+                  style={{ border: '1px solid var(--hero-x-rule)' }}
+                />
+              )}
+              <div className="whitespace-pre-wrap text-sm">{data.ad_text}</div>
+            </div>
+          )}
+
+          {editOpen && (
+            <EditAd
+              adText={data.ad_text}
+              photoUrl={data.photo_url}
+              busy={busy}
+              onSave={act}
+              onCancel={() => setEditOpen(false)}
             />
           )}
-          <div className="whitespace-pre-wrap text-sm">{data.ad_text}</div>
         </div>
+
+        {data.pending && (
+          <div className="card mt-6 flex flex-col gap-4">
+            <div className="flex items-center gap-2" style={{ color: 'var(--hero-accent)' }}>
+              <Icon name="Clock" size={17} />
+              <span className="text-lg uppercase" style={{ fontFamily: 'var(--hero-font-head)' }}>
+                Правки на проверке
+              </span>
+            </div>
+            <p className="text-sm" style={{ color: 'var(--hero-muted)' }}>
+              Отправлено {formatDate(data.pending.created_at)}. Пока правки не одобрены,
+              публикуется текущая версия.
+            </p>
+
+            {data.pending.photo_clear ? (
+              <span className="chip" style={{ color: 'var(--hero-accent)' }}>
+                Фото будет удалено
+              </span>
+            ) : (
+              data.pending.photo_url && (
+                <img
+                  src={data.pending.photo_url}
+                  alt=""
+                  className="max-h-56 w-full object-contain"
+                  style={{ border: '1px solid var(--hero-x-rule)' }}
+                />
+              )
+            )}
+
+            <div
+              className="whitespace-pre-wrap p-4 text-sm"
+              style={{ background: 'var(--hero-surface)', border: '1px solid var(--hero-x-rule)' }}
+            >
+              {data.pending.ad_text}
+            </div>
+
+            <button
+              className="btn btn-ghost"
+              disabled={busy}
+              style={{ alignSelf: 'flex-start' }}
+              onClick={() => act({ action: 'cancel_edit' })}
+            >
+              Отозвать правки
+            </button>
+          </div>
+        )}
+
+        {!data.pending && data.edit_rejected_at && (
+          <div className="card mt-6 flex items-start gap-3">
+            <Icon
+              name="TriangleAlert"
+              size={18}
+              style={{ color: 'var(--hero-accent)', flexShrink: 0, marginTop: 2 }}
+            />
+            <span className="text-sm">
+              Последние правки отклонены модератором {formatDate(data.edit_rejected_at)}.
+              Публикуется предыдущая версия — можно отправить новый вариант.
+            </span>
+          </div>
+        )}
 
         {c && c.state !== 'expired' && (
           <div className="card mt-6 flex flex-col gap-5">
