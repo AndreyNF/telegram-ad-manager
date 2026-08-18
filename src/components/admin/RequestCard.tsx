@@ -21,6 +21,7 @@ const RequestCard = ({ item, busy, onAction }: Props) => {
   const [open, setOpen] = useState(false);
 
   const c = item.campaign;
+  const isPaused = Boolean(c?.paused_until && new Date(c.paused_until) > new Date());
   const text = open || item.ad_text.length <= 220 ? item.ad_text : `${item.ad_text.slice(0, 220)}...`;
 
   return (
@@ -36,8 +37,8 @@ const RequestCard = ({ item, busy, onAction }: Props) => {
               {STATUS_LABELS[item.status] || item.status}
             </span>
             {c && (
-              <span className="chip" style={{ color: stateColor(c.state) }}>
-                {STATE_LABELS[c.state] || c.state}
+              <span className="chip" style={{ color: isPaused ? 'var(--hero-accent)' : stateColor(c.state) }}>
+                {isPaused ? 'На паузе' : STATE_LABELS[c.state] || c.state}
               </span>
             )}
           </div>
@@ -95,6 +96,11 @@ const RequestCard = ({ item, busy, onAction }: Props) => {
           <span>Последний раз: {formatDate(c.last_sent_at)}</span>
           <span>Действует до: {formatDate(c.expires_at)}</span>
           <span>Каждые {c.interval_minutes} мин</span>
+          {isPaused && (
+            <span style={{ color: 'var(--hero-accent)' }}>
+              Пауза до: {formatDate(c.paused_until)}
+            </span>
+          )}
         </div>
       )}
 
@@ -143,7 +149,16 @@ const RequestCard = ({ item, busy, onAction }: Props) => {
           </>
         ) : (
           <>
-            {c.state === 'running' ? (
+            {isPaused ? (
+              <button
+                className="btn btn-primary"
+                disabled={busy}
+                style={{ padding: '10px 20px', fontSize: '0.75em' }}
+                onClick={() => onAction({ action: 'unpause', campaign_id: c.id })}
+              >
+                Снять паузу
+              </button>
+            ) : c.state === 'running' ? (
               <button
                 className="btn btn-ghost"
                 disabled={busy}

@@ -150,9 +150,15 @@ def handler(event: dict, context) -> dict:
     utc_hour, utc_minute = now_utc.hour, now_utc.minute
 
     cur.execute(
+        f"UPDATE {schema}.campaigns SET paused_until = NULL "
+        f"WHERE paused_until IS NOT NULL AND paused_until <= CURRENT_TIMESTAMP"
+    )
+
+    cur.execute(
         f"WITH due AS ("
         f"  SELECT id, interval_minutes FROM {schema}.campaigns "
         f"  WHERE state = 'running' AND next_run_at <= CURRENT_TIMESTAMP "
+        f"  AND (paused_until IS NULL OR paused_until <= CURRENT_TIMESTAMP) "
         f"  ORDER BY next_run_at LIMIT 10 FOR UPDATE SKIP LOCKED"
         f"), claimed AS ("
         f"  UPDATE {schema}.campaigns c "
@@ -210,6 +216,12 @@ def handler(event: dict, context) -> dict:
                 f"UPDATE {schema}.campaigns SET state = 'stopped', stopped_at = CURRENT_TIMESTAMP "
                 f"WHERE id = {campaign_id} AND fail_streak >= 5"
             )
+
+    cur.execute(
+        f"INSERT INTO {schema}.runner_heartbeat (id, last_run_at, last_sent) "
+        f"VALUES (1, CURRENT_TIMESTAMP, {sent}) "
+        f"ON CONFLICT (id) DO UPDATE SET last_run_at = CURRENT_TIMESTAMP, last_sent = {sent}"
+    )
 
     cur.close()
     conn.close()

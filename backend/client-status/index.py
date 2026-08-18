@@ -50,7 +50,8 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"SELECT r.id, r.city, r.ad_text, r.status, r.created_at, r.photo_url, "
             f"r.pref_start_hour, r.pref_end_hour, "
-            f"c.state, c.posts_sent, c.last_sent_at, c.expires_at, c.interval_minutes, c.id "
+            f"c.state, c.posts_sent, c.last_sent_at, c.expires_at, c.interval_minutes, c.id, "
+            f"c.paused_until "
             f"FROM {schema}.ad_requests r "
             f"LEFT JOIN {schema}.campaigns c ON c.request_id = r.id AND c.state <> 'archived' "
             f"WHERE r.public_token = '{safe_token}' LIMIT 1"
@@ -61,12 +62,44 @@ def handler(event: dict, context) -> dict:
 
         if method == 'POST':
             body = json.loads(event.get('body') or '{}')
-            if body.get('action') == 'stop' and row[13]:
+            action = body.get('action')
+            campaign_id = row[13]
+
+            if not campaign_id:
+                return json_response(400, {'error': 'Открутка ещё не запущена'})
+
+            if action == 'stop':
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET state = 'stopped', "
-                    f"stopped_at = CURRENT_TIMESTAMP WHERE id = {int(row[13])}"
+                    f"stopped_at = CURRENT_TIMESTAMP WHERE id = {int(campaign_id)}"
                 )
                 return json_response(200, {'ok': True})
+
+            if action == 'pause':
+                hours = body.get('hours', 24)
+                try:
+                    hours = float(hours)
+                except (TypeError, ValueError):
+                    return json_response(400, {'error': 'Укажите срок паузы'})
+                if not 0.5 <= hours <= 720:
+                    return json_response(400, {'error': 'Пауза возможна от 30 минут до 30 дней'})
+
+                minutes = int(hours * 60)
+                cur.execute(
+                    f"UPDATE {schema}.campaigns SET "
+                    f"paused_until = CURRENT_TIMESTAMP + INTERVAL '{minutes} minutes', "
+                    f"expires_at = expires_at + INTERVAL '{minutes} minutes' "
+                    f"WHERE id = {int(campaign_id)}"
+                )
+                return json_response(200, {'ok': True})
+
+            if action == 'resume':
+                cur.execute(
+                    f"UPDATE {schema}.campaigns SET paused_until = NULL, "
+                    f"next_run_at = CURRENT_TIMESTAMP WHERE id = {int(campaign_id)}"
+                )
+                return json_response(200, {'ok': True})
+
             return json_response(400, {'error': 'Действие недоступно'})
 
         return json_response(200, {
@@ -84,6 +117,7 @@ def handler(event: dict, context) -> dict:
                 'last_sent_at': row[10],
                 'expires_at': row[11],
                 'interval_minutes': row[12],
+                'paused_until': row[14],
             },
         })
     finally:

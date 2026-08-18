@@ -8,6 +8,7 @@ export interface Campaign {
   interval_minutes: number;
   window_start_hour: number;
   window_end_hour: number;
+  paused_until: string | null;
 }
 
 export interface AdRequest {

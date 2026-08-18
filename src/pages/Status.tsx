@@ -18,8 +18,17 @@ interface StatusData {
     last_sent_at: string | null;
     expires_at: string | null;
     interval_minutes: number;
+    paused_until: string | null;
   } | null;
 }
+
+const PAUSE_OPTIONS = [
+  { label: '2 часа', hours: 2 },
+  { label: '6 часов', hours: 6 },
+  { label: 'Сутки', hours: 24 },
+  { label: '3 дня', hours: 72 },
+  { label: 'Неделя', hours: 168 },
+];
 
 const Status = () => {
   const { token } = useParams();
@@ -27,6 +36,8 @@ const Status = () => {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [customHours, setCustomHours] = useState(12);
 
   const load = useCallback(async () => {
     try {
@@ -45,15 +56,21 @@ const Status = () => {
     load();
   }, [load]);
 
-  const stop = async () => {
+  const act = async (body: Record<string, unknown>) => {
     setBusy(true);
+    setError('');
     try {
-      await fetch(`${API.clientStatus}?token=${token}`, {
+      const res = await fetch(`${API.clientStatus}?token=${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'stop' }),
+        body: JSON.stringify(body),
       });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Не удалось выполнить');
+      setPauseOpen(false);
       await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось выполнить');
     } finally {
       setBusy(false);
     }
@@ -82,7 +99,8 @@ const Status = () => {
   }
 
   const c = data.campaign;
-  const isRunning = c?.state === 'running';
+  const isPaused = Boolean(c?.paused_until && new Date(c.paused_until) > new Date());
+  const isRunning = c?.state === 'running' && !isPaused;
 
   return (
     <div className="min-h-screen">
@@ -112,13 +130,15 @@ const Status = () => {
             <Icon name={isRunning ? 'Radio' : 'Pause'} size={14} />
             {isRunning
               ? 'Публикуется'
-              : c
-                ? c.state === 'expired'
-                  ? 'Срок закончился'
-                  : 'Остановлено'
-                : data.status === 'rejected'
-                  ? 'Отклонено'
-                  : 'Ждёт модерации'}
+              : isPaused
+                ? `На паузе до ${formatDate(c?.paused_until)}`
+                : c
+                  ? c.state === 'expired'
+                    ? 'Срок закончился'
+                    : 'Остановлено'
+                  : data.status === 'rejected'
+                    ? 'Отклонено'
+                    : 'Ждёт модерации'}
           </span>
           <span className="chip" style={{ color: 'var(--hero-muted)' }}>
             <Icon name="Clock" size={14} />
@@ -159,22 +179,122 @@ const Status = () => {
           <div className="whitespace-pre-wrap text-sm">{data.ad_text}</div>
         </div>
 
-        {c && (
-          <div className="mt-6 flex flex-wrap items-center gap-4">
-            {isRunning && (
-              <button className="btn btn-ghost" disabled={busy} onClick={stop}>
-                {busy ? 'Останавливаем...' : 'Остановить показы'}
-              </button>
+        {c && c.state !== 'expired' && (
+          <div className="card mt-6 flex flex-col gap-5">
+            <div className="text-lg uppercase" style={{ fontFamily: 'var(--hero-font-head)' }}>
+              Управление показами
+            </div>
+
+            {isPaused ? (
+              <>
+                <div className="flex items-start gap-3" style={{ color: 'var(--hero-accent)' }}>
+                  <Icon name="Pause" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span className="text-sm">
+                    Показы на паузе до {formatDate(c.paused_until)}. Срок действия продлён на время
+                    паузы — оплаченные дни не сгорают.
+                  </span>
+                </div>
+                <button
+                  className="btn btn-primary"
+                  disabled={busy}
+                  style={{ alignSelf: 'flex-start' }}
+                  onClick={() => act({ action: 'resume' })}
+                >
+                  <Icon name="Play" size={15} />
+                  {busy ? 'Возобновляем...' : 'Возобновить сейчас'}
+                </button>
+              </>
+            ) : isRunning ? (
+              <>
+                <p className="text-sm" style={{ color: 'var(--hero-muted)' }}>
+                  Нужен перерыв? Поставьте показы на паузу — оплаченное время не сгорит, срок
+                  сдвинется ровно на длительность паузы.
+                </p>
+
+                {!pauseOpen ? (
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setPauseOpen(true)}
+                      disabled={busy}
+                    >
+                      <Icon name="Pause" size={15} />
+                      Приостановить
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      disabled={busy}
+                      onClick={() => act({ action: 'stop' })}
+                    >
+                      Остановить совсем
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <span className="label" style={{ margin: 0 }}>
+                      На сколько приостановить
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {PAUSE_OPTIONS.map((o) => (
+                        <button
+                          key={o.hours}
+                          className="btn btn-ghost"
+                          disabled={busy}
+                          style={{ padding: '10px 18px', fontSize: '0.72em' }}
+                          onClick={() => act({ action: 'pause', hours: o.hours })}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap items-end gap-3">
+                      <label className="flex flex-col gap-2">
+                        <span className="label" style={{ margin: 0 }}>
+                          Свой срок, часов
+                        </span>
+                        <input
+                          className="field"
+                          type="number"
+                          min={1}
+                          max={720}
+                          value={customHours}
+                          onChange={(e) => setCustomHours(Number(e.target.value))}
+                          style={{ width: 120 }}
+                        />
+                      </label>
+                      <button
+                        className="btn btn-primary"
+                        disabled={busy || customHours < 1}
+                        onClick={() => act({ action: 'pause', hours: customHours })}
+                      >
+                        {busy ? 'Ставим на паузу...' : 'Приостановить'}
+                      </button>
+                      <button className="btn btn-ghost" onClick={() => setPauseOpen(false)}>
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm" style={{ color: 'var(--hero-muted)' }}>
+                Показы остановлены. Чтобы возобновить, напишите нам в Telegram.
+              </p>
             )}
+
+            {error && (
+              <div className="flex items-center gap-2" style={{ color: 'var(--hero-accent)' }}>
+                <Icon name="TriangleAlert" size={16} />
+                <span className="text-sm">{error}</span>
+              </div>
+            )}
+
             <span className="text-sm" style={{ color: 'var(--hero-muted)' }}>
               Последняя публикация: {formatDate(c.last_sent_at)}
             </span>
           </div>
         )}
-
-        <p className="mt-10 text-sm" style={{ color: 'var(--hero-muted)' }}>
-          Чтобы продлить или возобновить показы, напишите нам в Telegram.
-        </p>
       </main>
     </div>
   );

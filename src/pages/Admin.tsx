@@ -19,6 +19,7 @@ const Admin = () => {
   const [authed, setAuthed] = useState(false);
   const [requests, setRequests] = useState<AdRequest[]>([]);
   const [groups, setGroups] = useState<CityGroup[]>([]);
+  const [heartbeat, setHeartbeat] = useState<{ last_run_at: string | null; minutes_ago: number | null } | null>(null);
   const [tab, setTab] = useState<'requests' | 'groups' | 'schedule'>('requests');
   const [filter, setFilter] = useState('new');
   const [loading, setLoading] = useState(false);
@@ -35,6 +36,7 @@ const Admin = () => {
         if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
         setRequests(data.requests || []);
         setGroups(data.groups || []);
+        setHeartbeat(data.heartbeat || null);
         setAuthed(true);
         localStorage.setItem('admin_pw', pw);
       } catch (err) {
@@ -181,6 +183,34 @@ const Admin = () => {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-5 py-10">
+        {heartbeat && heartbeat.minutes_ago !== null && heartbeat.minutes_ago > 20 && (
+          <div
+            className="mb-6 flex flex-wrap items-center gap-4 p-4"
+            style={{ background: 'var(--hero-surface)', border: '1px solid var(--hero-accent)' }}
+          >
+            <Icon name="TriangleAlert" size={22} style={{ color: 'var(--hero-accent)' }} />
+            <div className="flex-1" style={{ minWidth: 240 }}>
+              <div style={{ fontFamily: 'var(--hero-font-head)', textTransform: 'uppercase' }}>
+                Публикация не запускалась{' '}
+                {heartbeat.minutes_ago > 120
+                  ? `${Math.round(heartbeat.minutes_ago / 60)} ч`
+                  : `${Math.round(heartbeat.minutes_ago)} мин`}
+              </div>
+              <p className="mt-1 text-sm" style={{ color: 'var(--hero-muted)' }}>
+                Объявления могут выходить с задержкой. Подключите планировщик во вкладке
+                «Расписание» — это займёт пару минут.
+              </p>
+            </div>
+            <button
+              className="btn btn-primary"
+              style={{ padding: '10px 20px', fontSize: '0.72em' }}
+              onClick={() => setTab('schedule')}
+            >
+              Настроить
+            </button>
+          </div>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-3">
           {[
             { label: 'Новых заявок', value: stats.newCount, icon: 'Inbox' },

@@ -32,7 +32,7 @@ def list_data(cur, schema: str) -> dict:
         f"SELECT r.id, r.city, r.contact, r.ad_text, r.status, r.created_at, "
         f"r.pref_start_hour, r.pref_end_hour, r.public_token, r.photo_url, r.client_notified, "
         f"c.id, c.state, c.posts_sent, c.last_sent_at, c.last_error, c.expires_at, "
-        f"c.interval_minutes, c.window_start_hour, c.window_end_hour "
+        f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until "
         f"FROM {schema}.ad_requests r "
         f"LEFT JOIN {schema}.campaigns c ON c.request_id = r.id AND c.state <> 'archived' "
         f"ORDER BY r.created_at DESC LIMIT 200"
@@ -61,6 +61,7 @@ def list_data(cur, schema: str) -> dict:
                 'interval_minutes': row[17],
                 'window_start_hour': row[18],
                 'window_end_hour': row[19],
+                'paused_until': row[20],
             },
         })
 
@@ -78,7 +79,17 @@ def list_data(cur, schema: str) -> dict:
         'sort_order': g[6],
     } for g in cur.fetchall()]
 
-    return {'requests': requests, 'groups': groups}
+    cur.execute(
+        f"SELECT last_run_at, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - last_run_at)) / 60 "
+        f"FROM {schema}.runner_heartbeat WHERE id = 1"
+    )
+    hb = cur.fetchone()
+    heartbeat = {
+        'last_run_at': hb[0] if hb else None,
+        'minutes_ago': round(float(hb[1]), 1) if hb and hb[1] is not None else None,
+    }
+
+    return {'requests': requests, 'groups': groups, 'heartbeat': heartbeat}
 
 
 def handler(event: dict, context) -> dict:
@@ -161,6 +172,27 @@ def handler(event: dict, context) -> dict:
                     f"fail_streak = 0, last_error = NULL, next_run_at = CURRENT_TIMESTAMP "
                     f"WHERE id = {campaign_id}"
                 )
+            return json_response(200, {'ok': True})
+
+        if action == 'pause':
+            campaign_id = int(body.get('campaign_id', 0))
+            hours = float(body.get('hours', 24))
+            hours = max(0.5, min(hours, 720))
+            minutes = int(hours * 60)
+            cur.execute(
+                f"UPDATE {schema}.campaigns SET "
+                f"paused_until = CURRENT_TIMESTAMP + INTERVAL '{minutes} minutes', "
+                f"expires_at = expires_at + INTERVAL '{minutes} minutes' "
+                f"WHERE id = {campaign_id}"
+            )
+            return json_response(200, {'ok': True})
+
+        if action == 'unpause':
+            campaign_id = int(body.get('campaign_id', 0))
+            cur.execute(
+                f"UPDATE {schema}.campaigns SET paused_until = NULL, "
+                f"next_run_at = CURRENT_TIMESTAMP WHERE id = {campaign_id}"
+            )
             return json_response(200, {'ok': True})
 
         if action == 'extend':
