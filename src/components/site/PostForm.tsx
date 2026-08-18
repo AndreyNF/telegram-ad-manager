@@ -14,6 +14,7 @@ const PostForm = () => {
   const [clientNotified, setClientNotified] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [needBot, setNeedBot] = useState(false);
   const [photo, setPhoto] = useState<{ name: string; type: string; data: string } | null>(null);
   const [form, setForm] = useState({
     city: '',
@@ -59,7 +60,11 @@ const PostForm = () => {
         body: JSON.stringify(photo ? { ...form, photo } : form),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Не удалось отправить заявку');
+      if (!res.ok) {
+        setNeedBot(Boolean(data.need_bot));
+        throw new Error(data.error || 'Не удалось отправить заявку');
+      }
+      setNeedBot(false);
       setForm({
         city: cities[0]?.city || '',
         contact: '',
@@ -191,7 +196,8 @@ const PostForm = () => {
             >
               <Icon name="Send" size={18} style={{ color: 'var(--hero-accent)', flexShrink: 0 }} />
               <span style={{ color: 'var(--hero-muted)', fontSize: '0.85em', flex: '1 1 200px' }}>
-                Сначала нажмите «Старт» у бота — иначе он не сможет прислать ссылку на статус.
+                Обязательно: нажмите «Старт» у бота до отправки заявки. Без этого заявка
+                не примется — мы не сможем связать её с вашим Telegram.
               </span>
               <a
                 className="btn btn-ghost"
@@ -307,9 +313,29 @@ const PostForm = () => {
           </div>
 
           {error && (
-            <div className="flex items-center gap-2" style={{ color: 'var(--hero-accent)' }}>
-              <Icon name="TriangleAlert" size={18} />
-              <span>{error}</span>
+            <div
+              className="flex flex-col gap-3 p-4"
+              style={{
+                background: 'var(--hero-surface)',
+                border: '1px solid var(--hero-accent)',
+              }}
+            >
+              <div className="flex items-start gap-2" style={{ color: 'var(--hero-accent)' }}>
+                <Icon name="TriangleAlert" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                <span className="text-sm">{error}</span>
+              </div>
+              {needBot && (
+                <a
+                  className="btn btn-primary"
+                  href={BOT_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ alignSelf: 'flex-start', padding: '10px 20px', fontSize: '0.72em' }}
+                >
+                  <Icon name="Send" size={15} />
+                  Запустить бота
+                </a>
+              )}
             </div>
           )}
 

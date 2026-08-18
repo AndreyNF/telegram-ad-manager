@@ -7,7 +7,7 @@
       "expectedStatus": 200
     },
     {
-      "name": "Создание заявки",
+      "name": "Заявка без запуска бота отклоняется",
       "method": "POST",
       "path": "/",
       "body": {
@@ -15,7 +15,7 @@
         "contact": "@autotest",
         "text": "автотест заявки"
       },
-      "expectedStatus": 200
+      "expectedStatus": 400
     },
     {
       "name": "Пустая заявка отклоняется",

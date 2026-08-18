@@ -206,6 +206,21 @@ def handler(event: dict, context) -> dict:
             photo_warning = 'Фото не удалось загрузить, заявка сохранена без него'
 
     schema = os.environ.get('MAIN_DB_SCHEMA', 'public')
+
+    chat_found = find_chat_id(schema, contact)
+    if not chat_found:
+        return {
+            'statusCode': 400,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({
+                'error': 'Сначала запустите нашего Telegram-бота — нажмите «Старт», '
+                         'а затем отправьте заявку. Так мы сможем прислать вам ссылку '
+                         'на личный кабинет и уведомления.',
+                'need_bot': True,
+            }, ensure_ascii=False),
+            'isBase64Encoded': False,
+        }
+
     conn = psycopg2.connect(os.environ['DATABASE_URL'])
     conn.autocommit = True
     cur = conn.cursor()
@@ -230,7 +245,6 @@ def handler(event: dict, context) -> dict:
     request_id = cur.fetchone()[0]
 
     window_str = f'{start_hour:02d}:00 — {end_hour:02d}:00'
-    chat_found = find_chat_id(schema, contact)
 
     client_notified = False
     if chat_found:
@@ -239,12 +253,18 @@ def handler(event: dict, context) -> dict:
         except Exception:
             client_notified = False
 
-    if client_notified:
-        safe_chat = chat_found.replace("'", "''")
-        cur.execute(
-            f"UPDATE {schema}.ad_requests SET client_notified = true, "
-            f"client_chat_id = '{safe_chat}' WHERE id = {request_id}"
-        )
+    safe_chat = chat_found.replace("'", "''")
+    cur.execute(
+        f"UPDATE {schema}.ad_requests SET "
+        f"client_notified = {'true' if client_notified else 'false'}, "
+        f"client_chat_id = '{safe_chat}' WHERE id = {request_id}"
+    )
+    cur.execute(
+        f"UPDATE {schema}.ad_requests r SET client_username = u.username, "
+        f"client_name = COALESCE(NULLIF(r.client_name, ''), u.first_name) "
+        f"FROM {schema}.telegram_users u "
+        f"WHERE r.id = {request_id} AND u.chat_id = '{safe_chat}'"
+    )
 
     cur.close()
     conn.close()
