@@ -2,10 +2,12 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { formatDate, hourLabel } from '@/lib/api';
 import { AdRequest, STATE_LABELS, STATUS_LABELS } from './types';
+import ClientChat from './ClientChat';
 
 interface Props {
   item: AdRequest;
   busy: boolean;
+  password: string;
   onAction: (body: Record<string, unknown>) => void;
 }
 
@@ -15,10 +17,11 @@ const stateColor = (state?: string) => {
   return 'var(--hero-muted)';
 };
 
-const RequestCard = ({ item, busy, onAction }: Props) => {
+const RequestCard = ({ item, busy, password, onAction }: Props) => {
   const [days, setDays] = useState(30);
   const [interval, setInterval] = useState(15);
   const [open, setOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const c = item.campaign;
   const isPaused = Boolean(c?.paused_until && new Date(c.paused_until) > new Date());
@@ -65,12 +68,14 @@ const RequestCard = ({ item, busy, onAction }: Props) => {
         </div>
 
         {item.photo_url && (
-          <img
-            src={item.photo_url}
-            alt=""
-            className="h-20 w-20 object-cover"
-            style={{ border: '1px solid var(--hero-x-rule)' }}
-          />
+          <a href={item.photo_url} target="_blank" rel="noreferrer">
+            <img
+              src={item.photo_url}
+              alt=""
+              className="max-h-32 w-auto object-contain"
+              style={{ border: '1px solid var(--hero-x-rule)', background: 'var(--hero-surface)' }}
+            />
+          </a>
         )}
       </div>
 
@@ -212,6 +217,15 @@ const RequestCard = ({ item, busy, onAction }: Props) => {
           </button>
         )}
 
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '10px 20px', fontSize: '0.75em' }}
+          onClick={() => setChatOpen(!chatOpen)}
+        >
+          <Icon name="MessageCircle" size={14} />
+          {chatOpen ? 'Скрыть чат' : 'Написать клиенту'}
+        </button>
+
         {item.public_token && (
           <a
             className="btn btn-ghost"
@@ -224,6 +238,10 @@ const RequestCard = ({ item, busy, onAction }: Props) => {
           </a>
         )}
       </div>
+
+      {chatOpen && (
+        <ClientChat item={item} password={password} onSent={() => onAction({ action: 'refresh' })} />
+      )}
     </div>
   );
 };

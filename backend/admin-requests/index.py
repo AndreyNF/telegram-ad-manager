@@ -3,6 +3,8 @@ import os
 
 import psycopg2
 
+from telegram_client import call as call_telegram
+
 
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
@@ -31,6 +33,7 @@ def list_data(cur, schema: str) -> dict:
     cur.execute(
         f"SELECT r.id, r.city, r.contact, r.ad_text, r.status, r.created_at, "
         f"r.pref_start_hour, r.pref_end_hour, r.public_token, r.photo_url, r.client_notified, "
+        f"r.client_chat_id, "
         f"c.id, c.state, c.posts_sent, c.last_sent_at, c.last_error, c.expires_at, "
         f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until "
         f"FROM {schema}.ad_requests r "
@@ -51,17 +54,18 @@ def list_data(cur, schema: str) -> dict:
             'public_token': row[8],
             'photo_url': row[9],
             'client_notified': row[10],
-            'campaign': None if row[11] is None else {
-                'id': row[11],
-                'state': row[12],
-                'posts_sent': row[13],
-                'last_sent_at': row[14],
-                'last_error': row[15],
-                'expires_at': row[16],
-                'interval_minutes': row[17],
-                'window_start_hour': row[18],
-                'window_end_hour': row[19],
-                'paused_until': row[20],
+            'can_write': bool(row[11]),
+            'campaign': None if row[12] is None else {
+                'id': row[12],
+                'state': row[13],
+                'posts_sent': row[14],
+                'last_sent_at': row[15],
+                'last_error': row[16],
+                'expires_at': row[17],
+                'interval_minutes': row[18],
+                'window_start_hour': row[19],
+                'window_end_hour': row[20],
+                'paused_until': row[21],
             },
         })
 
@@ -92,6 +96,40 @@ def list_data(cur, schema: str) -> dict:
     return {'requests': requests, 'groups': groups, 'heartbeat': heartbeat}
 
 
+def deliver_to_client(cur, schema: str, request_id: int, text: str) -> dict:
+    """Шлёт клиенту сообщение в Telegram и сохраняет его в переписке"""
+    cur.execute(
+        f"SELECT client_chat_id, contact FROM {schema}.ad_requests WHERE id = {request_id}"
+    )
+    row = cur.fetchone()
+    if not row:
+        return json_response(404, {'error': 'Заявка не найдена'})
+
+    chat_id, contact = row
+    if not chat_id:
+        return json_response(400, {
+            'error': f'Клиент {contact} не запускал бота — доставить сообщение нельзя'
+        })
+
+    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    if not token:
+        return json_response(500, {'error': 'Бот не настроен'})
+
+    try:
+        data = call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text}, budget=6.0)
+    except Exception as exc:
+        return json_response(502, {'error': f'Telegram недоступен: {str(exc)[:200]}'})
+
+    if not data.get('ok'):
+        return json_response(502, {'error': str(data.get('description'))[:300]})
+
+    cur.execute(
+        f"INSERT INTO {schema}.client_messages (request_id, direction, text) "
+        f"VALUES ({request_id}, 'out', '{esc(text)}')"
+    )
+    return json_response(200, {'ok': True})
+
+
 def handler(event: dict, context) -> dict:
     """Админка: список заявок, модерация, запуск и остановка открутки, управление группами городов"""
     method = event.get('httpMethod', 'GET')
@@ -111,10 +149,48 @@ def handler(event: dict, context) -> dict:
 
     try:
         if method == 'GET':
+            params = event.get('queryStringParameters') or {}
+            messages_for = params.get('messages_for')
+            if messages_for:
+                cur.execute(
+                    f"SELECT direction, text, created_at FROM {schema}.client_messages "
+                    f"WHERE request_id = {int(messages_for)} ORDER BY created_at LIMIT 100"
+                )
+                return json_response(200, {'messages': [
+                    {'direction': m[0], 'text': m[1], 'created_at': m[2]}
+                    for m in cur.fetchall()
+                ]})
             return json_response(200, list_data(cur, schema))
 
         body = json.loads(event.get('body') or '{}')
         action = body.get('action', '')
+
+        if action == 'send_message':
+            request_id = int(body.get('id', 0))
+            text = (body.get('text') or '').strip()[:3000]
+            if not text:
+                return json_response(400, {'error': 'Пустое сообщение'})
+            return deliver_to_client(cur, schema, request_id, text)
+
+        if action == 'send_cabinet_link':
+            request_id = int(body.get('id', 0))
+            cur.execute(
+                f"SELECT public_token, city FROM {schema}.ad_requests WHERE id = {request_id}"
+            )
+            row = cur.fetchone()
+            if not row or not row[0]:
+                return json_response(404, {'error': 'У заявки нет ссылки на кабинет'})
+
+            site = os.environ.get('SITE_URL', '').rstrip('/')
+            if not site:
+                return json_response(500, {'error': 'Не задан адрес сайта'})
+
+            text = (
+                f"Личный кабинет вашего объявления ({row[1]}):\n"
+                f"{site}/status/{row[0]}\n\n"
+                f"Здесь виден статус, количество публикаций и срок окончания."
+            )
+            return deliver_to_client(cur, schema, request_id, text)
 
         if action == 'approve':
             request_id = int(body.get('id', 0))

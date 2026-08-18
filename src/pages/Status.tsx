@@ -172,7 +172,7 @@ const Status = () => {
             <img
               src={data.photo_url}
               alt=""
-              className="mb-4 max-h-72 w-full object-cover"
+              className="mb-4 max-h-72 w-full object-contain"
               style={{ border: '1px solid var(--hero-x-rule)' }}
             />
           )}

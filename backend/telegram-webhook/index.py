@@ -39,6 +39,26 @@ def save_user(schema: str, username: str, chat_id: int) -> None:
     conn.close()
 
 
+def save_incoming(schema: str, chat_id: int, text: str) -> None:
+    """Сохраняет ответ клиента в переписку по его последней заявке"""
+    conn = psycopg2.connect(os.environ['DATABASE_URL'])
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT id FROM {schema}.ad_requests WHERE client_chat_id = '{chat_id}' "
+        f"ORDER BY created_at DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    if row:
+        safe_text = text.replace("'", "''")[:3000]
+        cur.execute(
+            f"INSERT INTO {schema}.client_messages (request_id, direction, text) "
+            f"VALUES ({row[0]}, 'in', '{safe_text}')"
+        )
+    cur.close()
+    conn.close()
+
+
 def save_group(schema: str, chat_id: int, title: str) -> None:
     """Автоматически подставляет ID группы по её названию, если город совпал"""
     if not title:
@@ -115,6 +135,12 @@ def handler(event: dict, context) -> dict:
             pass
 
         text = message.get('text', '')
+        if text and not text.startswith('/'):
+            try:
+                save_incoming(schema, chat_id, text)
+            except Exception:
+                pass
+
         if text.startswith('/start'):
             try:
                 token = os.environ['TELEGRAM_BOT_TOKEN']

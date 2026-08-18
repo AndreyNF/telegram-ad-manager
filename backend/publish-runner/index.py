@@ -16,26 +16,49 @@ CORS_HEADERS = {
 }
 
 
-def send_message(token: str, chat_id: str, text: str, photo_url: str = None) -> tuple:
-    """Отправляет сообщение или фото с подписью в чат"""
+def extract_file_id(data: dict) -> str:
+    """Достаёт file_id самой крупной версии отправленного фото"""
+    photos = ((data.get('result') or {}).get('photo')) or []
+    if not photos:
+        return ''
+    best = max(photos, key=lambda p: p.get('file_size') or 0)
+    return best.get('file_id') or ''
+
+
+def send_message(token: str, chat_id: str, text: str, photo_url: str = None,
+                 photo_file_id: str = None) -> tuple:
+    """Отправляет сообщение или фото с подписью в чат. Возвращает (успех, ошибка, file_id)"""
     try:
-        if photo_url:
+        source = photo_file_id or photo_url
+        if source:
             fits = len(text) <= 1024
             data = call_telegram(token, 'sendPhoto', {
                 'chat_id': chat_id,
-                'photo': photo_url,
+                'photo': source,
                 'caption': text if fits else '',
-            })
+            }, timeout=8.0, budget=20.0)
+
+            if not data.get('ok') and photo_file_id and photo_url:
+                data = call_telegram(token, 'sendPhoto', {
+                    'chat_id': chat_id,
+                    'photo': photo_url,
+                    'caption': text if fits else '',
+                }, timeout=8.0, budget=20.0)
+
             if data.get('ok'):
                 if not fits:
                     call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
-                return (True, None)
+                return (True, None, extract_file_id(data))
+
+            note = str(data.get('description') or 'фото не отправлено')
             data = call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
-        else:
-            data = call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
-        return (bool(data.get('ok')), None if data.get('ok') else str(data.get('description')))
+            ok = bool(data.get('ok'))
+            return (ok, f'фото не ушло: {note[:200]}' if ok else note[:300], '')
+
+        data = call_telegram(token, 'sendMessage', {'chat_id': chat_id, 'text': text})
+        return (bool(data.get('ok')), None if data.get('ok') else str(data.get('description')), '')
     except Exception as exc:
-        return (False, str(exc)[:400])
+        return (False, str(exc)[:400], '')
 
 
 def send_expiry_reminders(cur, schema: str, token: str) -> int:
@@ -72,14 +95,14 @@ def send_expiry_reminders(cur, schema: str, token: str) -> int:
         )
 
         if admin_chat:
-            ok, err = send_message(token, admin_chat, admin_text)
+            ok, err, _ = send_message(token, admin_chat, admin_text)
             if not ok:
                 notes.append(f'админ: {err}')
         else:
             notes.append('админ: не задан чат')
 
         if client_chat_id:
-            ok, err = send_message(token, client_chat_id, client_text)
+            ok, err, _ = send_message(token, client_chat_id, client_text)
             if not ok:
                 notes.append(f'клиент: {err}')
         else:
@@ -178,7 +201,8 @@ def handler(event: dict, context) -> dict:
         f"           c.window_start_hour, c.window_end_hour, c.tz_offset"
         f") "
         f"SELECT cl.id, cl.interval_minutes, r.ad_text, g.chat_id, "
-        f"       cl.window_start_hour, cl.window_end_hour, cl.tz_offset, r.photo_url "
+        f"       cl.window_start_hour, cl.window_end_hour, cl.tz_offset, r.photo_url, "
+        f"       cl.request_id, r.photo_file_id "
         f"FROM claimed cl "
         f"JOIN {schema}.ad_requests r ON r.id = cl.request_id "
         f"LEFT JOIN {schema}.city_groups g ON g.city = cl.city"
@@ -188,7 +212,8 @@ def handler(event: dict, context) -> dict:
     sent = 0
     errors = 0
     postponed = 0
-    for campaign_id, interval, ad_text, chat_id, win_start, win_end, tz_offset, photo_url in rows:
+    for (campaign_id, interval, ad_text, chat_id, win_start, win_end, tz_offset,
+         photo_url, request_id, photo_file_id) in rows:
         delay = minutes_until_window(utc_hour, utc_minute, win_start, win_end, tz_offset)
         if delay > 0:
             postponed += 1
@@ -207,12 +232,19 @@ def handler(event: dict, context) -> dict:
             errors += 1
             continue
 
-        ok, error = send_message(token, chat_id, ad_text, photo_url)
+        ok, error, file_id = send_message(token, chat_id, ad_text, photo_url, photo_file_id)
         if ok:
             sent += 1
+            if file_id and file_id != photo_file_id:
+                safe_fid = file_id.replace("'", "''")[:300]
+                cur.execute(
+                    f"UPDATE {schema}.ad_requests SET photo_file_id = '{safe_fid}' "
+                    f"WHERE id = {request_id}"
+                )
+            warn = f"'{error.replace(chr(39), chr(39) * 2)[:400]}'" if error else 'NULL'
             cur.execute(
                 f"UPDATE {schema}.campaigns SET posts_sent = posts_sent + 1, "
-                f"last_sent_at = CURRENT_TIMESTAMP, last_error = NULL, fail_streak = 0 "
+                f"last_sent_at = CURRENT_TIMESTAMP, last_error = {warn}, fail_streak = 0 "
                 f"WHERE id = {campaign_id}"
             )
         else:

@@ -60,6 +60,10 @@ const Admin = () => {
   }, [authed, password, load]);
 
   const act = async (body: Record<string, unknown>) => {
+    if (body.action === 'refresh') {
+      await load(password, true);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -296,7 +300,7 @@ const Admin = () => {
                 </div>
               )}
               {visible.map((r) => (
-                <RequestCard key={r.id} item={r} busy={busy} onAction={act} />
+                <RequestCard key={r.id} item={r} busy={busy} password={password} onAction={act} />
               ))}
             </div>
           </>

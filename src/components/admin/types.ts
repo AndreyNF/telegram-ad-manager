@@ -23,7 +23,14 @@ export interface AdRequest {
   public_token: string | null;
   photo_url: string | null;
   client_notified: boolean;
+  can_write: boolean;
   campaign: Campaign | null;
+}
+
+export interface ClientMessage {
+  direction: 'in' | 'out';
+  text: string;
+  created_at: string;
 }
 
 export interface CityGroup {
