@@ -27,8 +27,8 @@ const Admin = () => {
   const [error, setError] = useState('');
 
   const load = useCallback(
-    async (pw: string) => {
-      setLoading(true);
+    async (pw: string, silent = false) => {
+      if (!silent) setLoading(true);
       setError('');
       try {
         const res = await fetch(API.adminRequests, { headers: { 'X-Admin-Password': pw } });
@@ -52,6 +52,12 @@ const Admin = () => {
   useEffect(() => {
     if (password) load(password);
   }, []);
+
+  useEffect(() => {
+    if (!authed || !password) return;
+    const id = window.setInterval(() => load(password, true), 60000);
+    return () => window.clearInterval(id);
+  }, [authed, password, load]);
 
   const act = async (body: Record<string, unknown>) => {
     setBusy(true);
@@ -183,6 +189,16 @@ const Admin = () => {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-5 py-10">
+        {heartbeat && heartbeat.minutes_ago !== null && heartbeat.minutes_ago <= 20 && (
+          <div className="mb-6 flex items-center gap-3 text-sm" style={{ color: 'var(--hero-muted)' }}>
+            <Icon name="CircleCheck" size={16} style={{ color: 'var(--hero-x-quarter)' }} />
+            <span>
+              Автопубликация работает. Последняя проверка{' '}
+              {heartbeat.minutes_ago < 1.5 ? 'меньше минуты назад' : `${Math.round(heartbeat.minutes_ago)} мин назад`}.
+            </span>
+          </div>
+        )}
+
         {heartbeat && heartbeat.minutes_ago !== null && heartbeat.minutes_ago > 20 && (
           <div
             className="mb-6 flex flex-wrap items-center gap-4 p-4"
