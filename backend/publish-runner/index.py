@@ -34,8 +34,6 @@ def with_author(ad_text: str, name: str, username: str) -> str:
     if clean_user:
         label = esc_html(display) if display else f'@{esc_html(clean_user)}'
         header = f'<b><a href="https://t.me/{clean_user}">{label}</a></b>'
-        if display:
-            header += f' · @{esc_html(clean_user)}'
     elif display:
         header = f'<b>{esc_html(display)}</b>'
     else:
@@ -113,6 +111,12 @@ def send_message(token: str, chat_id: str, text: str, photo_url: str = None,
                         file_field='photo', file_bytes=blob,
                         filename='ad.jpg', mime=mime,
                     )
+                    if not data.get('ok'):
+                        data = call_telegram(
+                            token, 'sendDocument', upload, timeout=25.0, budget=50.0,
+                            file_field='document', file_bytes=blob,
+                            filename='ad.jpg', mime=mime,
+                        )
 
             if data.get('ok'):
                 if not fits:

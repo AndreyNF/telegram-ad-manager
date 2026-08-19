@@ -41,9 +41,6 @@ const TelegramPreview = ({ item }: Props) => {
           {label && (
             <div className="mb-2">
               <span style={{ color: '#6ab3f3', fontWeight: 700 }}>{label}</span>
-              {name && username && (
-                <span style={{ color: '#8d9aa8' }}> · @{username}</span>
-              )}
             </div>
           )}
 

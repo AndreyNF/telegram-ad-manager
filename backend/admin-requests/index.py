@@ -52,8 +52,6 @@ def build_post(ad_text: str, name: str, username: str) -> str:
     if clean_user:
         label = esc_html(display) if display else f'@{esc_html(clean_user)}'
         header = f'<b><a href="https://t.me/{clean_user}">{label}</a></b>'
-        if display:
-            header += f' · @{esc_html(clean_user)}'
     elif display:
         header = f'<b>{esc_html(display)}</b>'
     else:
