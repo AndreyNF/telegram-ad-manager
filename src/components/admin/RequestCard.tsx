@@ -30,6 +30,7 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
 
   const c = item.campaign;
   const isPaused = Boolean(c?.paused_until && new Date(c.paused_until) > new Date());
+  const photoFailed = Boolean(c?.last_error && /фото не ушло/i.test(c.last_error));
   const text = open || item.ad_text.length <= 220 ? item.ad_text : `${item.ad_text.slice(0, 220)}...`;
 
   return (
@@ -52,6 +53,19 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
             {c && (
               <span className="chip" style={{ color: isPaused ? 'var(--hero-accent)' : stateColor(c.state) }}>
                 {isPaused ? 'На паузе' : STATE_LABELS[c.state] || c.state}
+              </span>
+            )}
+            {photoFailed && (
+              <span
+                className="chip flex items-center gap-1"
+                style={{
+                  color: 'var(--hero-bg)',
+                  background: 'var(--hero-accent)',
+                  borderColor: 'var(--hero-accent)',
+                }}
+              >
+                <Icon name="ImageOff" size={13} />
+                Без фото
               </span>
             )}
           </div>
@@ -253,7 +267,31 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
         </div>
       )}
 
-      {c?.last_error && (
+      {c?.last_error && photoFailed && (
+        <div
+          className="flex flex-col gap-2 p-3"
+          style={{
+            background: 'rgba(255, 92, 46, 0.10)',
+            border: '1px solid var(--hero-accent)',
+          }}
+        >
+          <div className="flex items-center gap-2" style={{ color: 'var(--hero-accent)' }}>
+            <Icon name="ImageOff" size={17} style={{ flexShrink: 0 }} />
+            <span className="uppercase text-sm" style={{ fontFamily: 'var(--hero-font-head)' }}>
+              Объявление вышло без фото
+            </span>
+          </div>
+          <span className="text-sm">
+            Текст опубликован, но картинку Telegram не принял. Попробуйте загрузить фото
+            заново — лучше файлом меньшего размера.
+          </span>
+          <span className="text-xs" style={{ color: 'var(--hero-muted)' }}>
+            Ответ Telegram: {c.last_error.replace(/^фото не ушло:\s*/i, '')}
+          </span>
+        </div>
+      )}
+
+      {c?.last_error && !photoFailed && (
         <div className="flex items-start gap-2 text-sm" style={{ color: 'var(--hero-accent)' }}>
           <Icon name="TriangleAlert" size={15} style={{ flexShrink: 0, marginTop: 2 }} />
           <span>{c.last_error}</span>
