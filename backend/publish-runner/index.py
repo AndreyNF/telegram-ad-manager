@@ -332,6 +332,16 @@ def handler(event: dict, context) -> dict:
             errors += 1
             continue
 
+        if not (client_name or client_username):
+            cur.execute(
+                f"UPDATE {schema}.campaigns SET next_run_at = CURRENT_TIMESTAMP "
+                f"+ INTERVAL '{interval} minutes', last_error = "
+                f"'Не определён автор — публикация без подписи клиента отменена' "
+                f"WHERE id = {campaign_id}"
+            )
+            errors += 1
+            continue
+
         full_text = with_author(ad_text, client_name, client_username)
         ok, error, file_id = send_message(token, chat_id, full_text, photo_url,
                                           photo_file_id, html=True)

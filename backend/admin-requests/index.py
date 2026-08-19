@@ -409,13 +409,17 @@ def handler(event: dict, context) -> dict:
             campaign_id = int(body.get('campaign_id', 0))
             cur.execute(
                 f"SELECT r.ad_text, r.photo_url, r.photo_file_id, g.chat_id, "
-                f"COALESCE(NULLIF(r.client_name, ''), u.first_name), "
-                f"COALESCE(NULLIF(r.client_username, ''), u.username, "
+                f"COALESCE(NULLIF(r.client_name, ''), u.first_name, n.first_name), "
+                f"COALESCE(NULLIF(r.client_username, ''), u.username, n.username, "
                 f"         lower(ltrim(r.contact, '@'))), r.id "
                 f"FROM {schema}.campaigns c "
                 f"JOIN {schema}.ad_requests r ON r.id = c.request_id "
                 f"LEFT JOIN {schema}.city_groups g ON g.city = c.city "
                 f"LEFT JOIN {schema}.telegram_users u ON u.chat_id = r.client_chat_id "
+                f"LEFT JOIN {schema}.telegram_users n ON "
+                f"  replace(replace(replace(n.username, '_', ''), '.', ''), '-', '') = "
+                f"  replace(replace(replace(lower(ltrim(r.contact, '@')), '_', ''), '.', ''), "
+                f"          '-', '') "
                 f"WHERE c.id = {campaign_id}"
             )
             row = cur.fetchone()
@@ -423,6 +427,11 @@ def handler(event: dict, context) -> dict:
                 return json_response(404, {'error': 'Открутка не найдена'})
             if not row[3]:
                 return json_response(400, {'error': 'У города не указана группа Telegram'})
+            if not (row[4] or row[5]):
+                return json_response(400, {
+                    'error': 'Не определён автор объявления — публикация без подписи '
+                             'клиента отменена. Укажите имя или ник клиента в заявке.'
+                })
 
             token_bot = os.environ.get('TELEGRAM_BOT_TOKEN')
             if not token_bot:
