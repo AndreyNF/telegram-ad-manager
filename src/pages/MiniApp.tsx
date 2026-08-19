@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { API, formatDateTz, hourLabel, tzLabel } from '@/lib/api';
+import Status from './Status';
 
 interface Ad {
   id: number;
@@ -29,7 +30,16 @@ interface TgWebApp {
   expand: () => void;
   openLink: (url: string) => void;
   colorScheme?: string;
+  BackButton?: {
+    show: () => void;
+    hide: () => void;
+    onClick: (cb: () => void) => void;
+    offClick: (cb: () => void) => void;
+  };
 }
+
+const getTg = () =>
+  (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
 
 const stateInfo = (ad: Ad) => {
   const paused = ad.paused_until && new Date(ad.paused_until) > new Date();
@@ -47,9 +57,23 @@ const MiniApp = () => {
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [active, setActive] = useState('');
 
   useEffect(() => {
-    const tg = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
+    const back = getTg()?.BackButton;
+    if (!back) return;
+    const handler = () => setActive('');
+    if (active) {
+      back.onClick(handler);
+      back.show();
+    } else {
+      back.hide();
+    }
+    return () => back.offClick(handler);
+  }, [active]);
+
+  useEffect(() => {
+    const tg = getTg();
     tg?.ready();
     tg?.expand();
 
@@ -71,12 +95,10 @@ const MiniApp = () => {
       .finally(() => setLoading(false));
   }, []);
 
-  const open = (token: string) => {
-    const url = `${window.location.origin}/status/${token}`;
-    const tg = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
-    if (tg?.openLink) tg.openLink(url);
-    else window.open(url, '_blank');
-  };
+  if (active) {
+    return <Status tokenOverride={active} onBack={() => setActive('')} />;
+  }
+
 
   if (loading) {
     return (
@@ -175,7 +197,7 @@ const MiniApp = () => {
               <button
                 className="btn btn-primary"
                 style={{ padding: '11px 18px', fontSize: '0.72em' }}
-                onClick={() => open(ad.public_token)}
+                onClick={() => setActive(ad.public_token)}
               >
                 <Icon name="Settings" size={14} />
                 Управлять объявлением

@@ -45,8 +45,14 @@ const PAUSE_OPTIONS = [
   { label: 'Неделя', hours: 168 },
 ];
 
-const Status = () => {
-  const { token } = useParams();
+interface StatusProps {
+  tokenOverride?: string;
+  onBack?: () => void;
+}
+
+const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
+  const params = useParams();
+  const token = tokenOverride || params.token;
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -123,19 +129,30 @@ const Status = () => {
     <div className="min-h-screen">
       <header style={{ borderBottom: '1px solid var(--hero-x-rule)' }}>
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-5">
-          <a href="/" className="flex items-center gap-2">
-            <Icon name="Megaphone" size={20} style={{ color: 'var(--hero-accent)' }} />
-            <span className="uppercase" style={{ fontFamily: 'var(--hero-font-head)' }}>
-              Постовой
-            </span>
-          </a>
-          <a className="btn btn-ghost" href={BOT_URL} target="_blank" rel="noreferrer" style={{ padding: '9px 16px', fontSize: '0.72em' }}>
-            Наш бот
-          </a>
+          {onBack ? (
+            <button className="flex items-center gap-2" onClick={onBack}>
+              <Icon name="ArrowLeft" size={18} style={{ color: 'var(--hero-accent)' }} />
+              <span className="uppercase" style={{ fontFamily: 'var(--hero-font-head)' }}>
+                К объявлениям
+              </span>
+            </button>
+          ) : (
+            <a href="/" className="flex items-center gap-2">
+              <Icon name="Megaphone" size={20} style={{ color: 'var(--hero-accent)' }} />
+              <span className="uppercase" style={{ fontFamily: 'var(--hero-font-head)' }}>
+                Постовой
+              </span>
+            </a>
+          )}
+          {!onBack && (
+            <a className="btn btn-ghost" href={BOT_URL} target="_blank" rel="noreferrer" style={{ padding: '9px 16px', fontSize: '0.72em' }}>
+              Наш бот
+            </a>
+          )}
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl px-5 py-12">
+      <main className={`mx-auto w-full max-w-3xl px-5 ${onBack ? 'py-6' : 'py-12'}`}>
         <div className="eyebrow">Ваше объявление</div>
         <h1 className="section-title mt-4">{data.city}</h1>
 
