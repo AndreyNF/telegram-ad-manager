@@ -112,7 +112,7 @@ def create_order(schema: str, body: dict) -> dict:
     cur = conn.cursor()
     try:
         cur.execute(
-            f"SELECT r.id, r.city, c.id FROM {schema}.ad_requests r "
+            f"SELECT r.id, r.city, c.id, r.status FROM {schema}.ad_requests r "
             f"LEFT JOIN {schema}.campaigns c ON c.request_id = r.id "
             f"  AND c.state <> 'archived' "
             f"WHERE r.public_token = '{esc(token)}' LIMIT 1"
@@ -121,7 +121,10 @@ def create_order(schema: str, body: dict) -> dict:
         if not row:
             return json_response(404, {'error': 'Объявление не найдено'})
 
-        request_id, city, campaign_id = row[0], row[1], row[2]
+        request_id, city, campaign_id, status = row[0], row[1], row[2], row[3]
+        if status != 'approved':
+            return json_response(403, {'error': 'Объявление ещё не прошло модерацию'})
+
         label, price, days = PLANS[plan]
         kind = 'extend' if campaign_id else 'start'
 
@@ -169,14 +172,8 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
         request_id, plan, days, price = int(order[0]), order[1], int(order[2]), order[3]
 
         cur.execute(
-            f"UPDATE {schema}.payment_orders SET status = 'paid', "
-            f"paid_at = CURRENT_TIMESTAMP, fk_operation_id = '{esc(operation_id)[:64]}' "
-            f"WHERE id = {int(order_id)}"
-        )
-
-        cur.execute(
             f"SELECT r.city, r.pref_start_hour, r.pref_end_hour, "
-            f"COALESCE(g.tz_offset, 3), r.client_chat_id, c.id "
+            f"COALESCE(g.tz_offset, 3), r.client_chat_id, c.id, r.status "
             f"FROM {schema}.ad_requests r "
             f"LEFT JOIN {schema}.city_groups g ON g.city = r.city "
             f"LEFT JOIN {schema}.campaigns c ON c.request_id = r.id "
@@ -187,7 +184,20 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
         if not info:
             return 'no request'
 
-        city, win_start, win_end, tz_offset, client_chat, campaign_id = info
+        city, win_start, win_end, tz_offset, client_chat, campaign_id, status = info
+        if status != 'approved':
+            notify_admin(
+                f'Внимание: получена оплата по заявке #{request_id} ({city}), '
+                f'но она не прошла модерацию (статус: {status}). '
+                f'Показы НЕ запущены, деньги нужно вернуть вручную. Заказ #{order_id}.'
+            )
+            return 'not approved'
+
+        cur.execute(
+            f"UPDATE {schema}.payment_orders SET status = 'paid', "
+            f"paid_at = CURRENT_TIMESTAMP, fk_operation_id = '{esc(operation_id)[:64]}' "
+            f"WHERE id = {int(order_id)}"
+        )
 
         if campaign_id:
             cur.execute(
