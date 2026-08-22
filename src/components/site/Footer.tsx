@@ -22,25 +22,6 @@ const Footer = () => (
         <a href="/admin">Вход для модератора</a>
       </div>
     </div>
-
-    <div
-      className="mx-auto flex w-full max-w-6xl flex-col items-center gap-3 px-5 pb-10"
-      style={{ borderTop: '1px solid var(--hero-x-rule)', paddingTop: 24 }}
-    >
-      <span className="text-xs uppercase" style={{ color: 'var(--hero-muted)', letterSpacing: '0.08em' }}>
-        Приём оплаты
-      </span>
-      <a href="https://freekassa.net" target="_blank" rel="noreferrer" title="Free-Kassa">
-        <img
-          src="/freekassa.png"
-          alt="Оплата через Free-Kassa"
-          width={170}
-          height={60}
-          loading="lazy"
-          style={{ maxWidth: '100%', height: 'auto' }}
-        />
-      </a>
-    </div>
   </footer>
 );
 
