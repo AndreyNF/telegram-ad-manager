@@ -23,8 +23,7 @@ PLANS = {
     'month': ('Месяц', 10000, 30),
 }
 
-FK_IPS = ('168.119.157.136', '168.119.60.227', '178.154.197.79', '51.250.54.238')
-PAY_URL = 'https://pay.fk.money/'
+PAY_URL = 'https://anypay.io/merchant/pay'
 
 
 def esc(value) -> str:
@@ -59,25 +58,23 @@ def amount_str(amount) -> str:
     return f'{float(amount):.2f}'
 
 
-def build_pay_url(order_id: int, amount, email: str = '') -> str:
-    """Собирает ссылку на оплату Free-Kassa с подписью магазина"""
-    merchant = os.environ['FREEKASSA_MERCHANT_ID'].strip()
-    secret1 = os.environ['FREEKASSA_SECRET_1'].strip()
+def build_pay_url(order_id: int, amount, desc: str, email: str = '') -> str:
+    """Собирает ссылку на оплату AnyPay с подписью магазина"""
+    merchant = os.environ['ANYPAY_MERCHANT_ID'].strip()
+    secret = os.environ['ANYPAY_SECRET_KEY'].strip()
     total = amount_str(amount)
-    sign = hashlib.md5(
-        f'{merchant}:{total}:{secret1}:RUB:{order_id}'.encode()
+    sign = hashlib.sha256(
+        f'{merchant}:{total}:{secret}:RUB:{desc}:{order_id}'.encode()
     ).hexdigest()
     params = {
-        'm': merchant,
-        'oa': total,
+        'sign': sign,
         'currency': 'RUB',
-        'o': str(order_id),
-        's': sign,
-        'lang': 'ru',
+        'desc': desc,
     }
     if email:
-        params['em'] = email
-    return PAY_URL + '?' + urllib.parse.urlencode(params)
+        params['email'] = email
+    url = f'{PAY_URL}/{merchant}/{order_id}/{total}/RUB/'
+    return url + '?' + urllib.parse.urlencode(params)
 
 
 def notify_admin(text: str) -> None:
@@ -108,7 +105,7 @@ def create_order(schema: str, body: dict) -> dict:
     if not token or plan not in PLANS:
         return json_response(400, {'error': 'Укажите объявление и тариф'})
 
-    if not os.environ.get('FREEKASSA_MERCHANT_ID'):
+    if not os.environ.get('ANYPAY_MERCHANT_ID'):
         return json_response(503, {'error': 'Онлайн-оплата ещё не настроена'})
 
     conn = db()
@@ -139,13 +136,14 @@ def create_order(schema: str, body: dict) -> dict:
         cur.close()
         conn.close()
 
+    desc = f'Размещение объявления, {label}'
     return json_response(200, {
         'ok': True,
         'order_id': order_id,
         'amount': price,
         'plan_label': label,
         'city': city,
-        'pay_url': build_pay_url(order_id, price),
+        'pay_url': build_pay_url(order_id, price, desc),
     })
 
 
@@ -198,7 +196,7 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
                 f"+ INTERVAL '{days} days', state = 'running', reminder_sent_at = NULL, "
                 f"days_paid = COALESCE(days_paid, 0) + {days}, "
                 f"price_amount = COALESCE(price_amount, 0) + {price}, "
-                f"paid_at = CURRENT_TIMESTAMP, payment_note = 'Free-Kassa', "
+                f"paid_at = CURRENT_TIMESTAMP, payment_note = 'AnyPay', "
                 f"next_run_at = CURRENT_TIMESTAMP, fail_streak = 0, last_error = NULL "
                 f"WHERE id = {int(campaign_id)}"
             )
@@ -212,7 +210,7 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
                 f"({request_id}, '{esc(city)}', 15, 'running', CURRENT_TIMESTAMP, {days}, "
                 f"CURRENT_TIMESTAMP + INTERVAL '{days} days', {int(win_start)}, "
                 f"{int(win_end)}, {int(tz_offset)}, {price}, CURRENT_TIMESTAMP, "
-                f"'Free-Kassa') RETURNING id"
+                f"'AnyPay') RETURNING id"
             )
             campaign_id = cur.fetchone()[0]
             cur.execute(
@@ -224,7 +222,7 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
             f"INSERT INTO {schema}.payments "
             f"(campaign_id, request_id, amount, days, kind, note) VALUES "
             f"({int(campaign_id)}, {request_id}, {price}, {days}, '{kind_sql}', "
-            f"'Free-Kassa #{esc(operation_id)[:40]}')"
+            f"'AnyPay #{esc(operation_id)[:40]}')"
         )
         cur.execute(
             f"UPDATE {schema}.ad_requests SET renew_plan = NULL, renew_at = NULL "
@@ -244,7 +242,7 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
 
 
 def parse_form(event: dict) -> dict:
-    """Разбирает уведомление Free-Kassa, присланное как form-data"""
+    """Разбирает уведомление AnyPay, присланное как form-data"""
     raw = event.get('body') or ''
     if event.get('isBase64Encoded'):
         import base64
@@ -256,7 +254,7 @@ def parse_form(event: dict) -> dict:
 
 
 def handler(event: dict, context) -> dict:
-    """Онлайн-оплата Free-Kassa: создаёт ссылку на оплату и принимает уведомления
+    """Онлайн-оплата AnyPay: создаёт ссылку на оплату и принимает уведомления
     о платеже, автоматически запуская или продлевая показы объявления"""
     method = event.get('httpMethod', 'GET')
 
@@ -269,7 +267,7 @@ def handler(event: dict, context) -> dict:
     if method == 'GET':
         return json_response(200, {
             'ok': True,
-            'configured': bool(os.environ.get('FREEKASSA_MERCHANT_ID')),
+            'configured': bool(os.environ.get('ANYPAY_MERCHANT_ID')),
         })
 
     if params.get('notify') == '1' or params.get('action') == 'notify':
@@ -277,32 +275,24 @@ def handler(event: dict, context) -> dict:
         if not data:
             data = json.loads(event.get('body') or '{}')
 
-        headers = {k.lower(): v for k, v in (event.get('headers') or {}).items()}
-        source_ip = (
-            headers.get('x-real-ip')
-            or headers.get('x-forwarded-for', '').split(',')[0].strip()
-            or ((event.get('requestContext') or {}).get('identity') or {}).get('sourceIp', '')
-        )
-        if source_ip and source_ip not in FK_IPS:
-            return text_response(403, 'hacking attempt!')
+        merchant = os.environ.get('ANYPAY_MERCHANT_ID', '').strip()
+        secret = os.environ.get('ANYPAY_SECRET_KEY', '').strip()
+        order_id = data.get('pay_id', '')
+        amount = data.get('amount', '')
+        currency = data.get('currency', 'RUB')
 
-        merchant = os.environ.get('FREEKASSA_MERCHANT_ID', '').strip()
-        secret2 = os.environ.get('FREEKASSA_SECRET_2', '').strip()
-        order_id = data.get('MERCHANT_ORDER_ID', '')
-        amount = data.get('AMOUNT', '')
-
-        expected = hashlib.md5(
-            f"{data.get('MERCHANT_ID', '')}:{amount}:{secret2}:{order_id}".encode()
+        expected = hashlib.sha256(
+            f"{amount}:{currency}:{secret}:{merchant}:{order_id}".encode()
         ).hexdigest()
-        if expected != (data.get('SIGN') or '').lower():
+        if expected != (data.get('sign') or '').lower():
             return text_response(400, 'wrong sign')
-        if data.get('MERCHANT_ID', '') != merchant:
+        if data.get('merchant_id', '') != merchant:
             return text_response(400, 'wrong merchant')
         if not str(order_id).isdigit():
             return text_response(400, 'wrong order')
 
-        result = apply_payment(schema, int(order_id), amount, data.get('intid', ''))
-        return text_response(200 if result == 'YES' else 400, result)
+        result = apply_payment(schema, int(order_id), amount, str(order_id))
+        return text_response(200 if result == 'YES' else 400, 'OK' if result == 'YES' else result)
 
     body = json.loads(event.get('body') or '{}')
     if (body.get('action') or 'create') == 'create':

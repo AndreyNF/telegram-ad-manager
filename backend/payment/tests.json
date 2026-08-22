@@ -22,11 +22,11 @@
       "expectedStatus": 400
     },
     {
-      "name": "Уведомление с чужого адреса отклоняется",
+      "name": "Уведомление с неверной подписью отклоняется",
       "method": "POST",
       "path": "/?notify=1",
-      "body": {"MERCHANT_ID": "1", "AMOUNT": "100.00", "MERCHANT_ORDER_ID": "1", "SIGN": "bad"},
-      "expectedStatus": 403
+      "body": {"merchant_id": "1", "amount": "100.00", "pay_id": "1", "sign": "bad"},
+      "expectedStatus": 400
     }
   ]
 }
