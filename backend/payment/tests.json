@@ -1,0 +1,32 @@
+{
+  "tests": [
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Проверка доступности",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Заказ без тарифа отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "create", "token": "", "plan": ""},
+      "expectedStatus": 400
+    },
+    {
+      "name": "Уведомление с чужого адреса отклоняется",
+      "method": "POST",
+      "path": "/?notify=1",
+      "body": {"MERCHANT_ID": "1", "AMOUNT": "100.00", "MERCHANT_ORDER_ID": "1", "SIGN": "bad"},
+      "expectedStatus": 403
+    }
+  ]
+}

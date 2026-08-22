@@ -321,12 +321,13 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
           onSave={act}
         />
 
-        {c && (
+        {(c || data.status === 'approved') && (
           <RenewPlan
             currentPlan={data.plan}
             renew={data.renew}
-            expiresAt={c.expires_at}
+            expiresAt={c ? c.expires_at : null}
             busy={busy}
+            token={token}
             onAction={act}
           />
         )}

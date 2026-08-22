@@ -4,6 +4,7 @@ export const API = {
   clientStatus: 'https://functions.poehali.dev/0f051941-4689-49fc-b184-f041a807d5a6',
   publishRunner: 'https://functions.poehali.dev/7ff2e024-dc42-4763-95b7-5aee70dc48b1',
   miniapp: 'https://functions.poehali.dev/95868739-40bc-4833-bae3-a294738ef5fb',
+  payment: 'https://functions.poehali.dev/25b922bd-21ff-4e40-bb24-2c5e1fb2c05d',
 };
 
 export const BOT_USERNAME = 'kupidom_moder_bot';
