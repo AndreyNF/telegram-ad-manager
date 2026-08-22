@@ -16,6 +16,7 @@ const EMPTY = {
   members: '',
   slots: '',
   is_active: true,
+  auto_clean: false,
   sort_order: 100,
   tz_offset: 3,
 };
@@ -135,6 +136,15 @@ const GroupsTab = ({ groups, busy, onAction }: Props) => {
                 <span className="chip" style={{ color: 'var(--hero-muted)' }}>
                   {tzLabel(g.tz_offset)}
                 </span>
+                {g.auto_clean && (
+                  <span
+                    className="chip flex items-center gap-1"
+                    style={{ color: 'var(--hero-x-quarter)' }}
+                  >
+                    <Icon name="ShieldCheck" size={13} />
+                    Чистка чужих
+                  </span>
+                )}
               </div>
             </div>
 
@@ -154,6 +164,19 @@ const GroupsTab = ({ groups, busy, onAction }: Props) => {
                 onClick={() => onAction({ action: 'toggle_group', id: g.id })}
               >
                 {g.is_active ? 'Скрыть' : 'Показать'}
+              </button>
+              <button
+                className="btn btn-ghost"
+                disabled={busy}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '0.72em',
+                  color: g.auto_clean ? 'var(--hero-accent)' : undefined,
+                }}
+                onClick={() => onAction({ action: 'toggle_clean', id: g.id })}
+              >
+                <Icon name="ShieldCheck" size={14} />
+                {g.auto_clean ? 'Выключить чистку' : 'Чистить чужие'}
               </button>
             </div>
           </div>

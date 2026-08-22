@@ -103,11 +103,8 @@ def notify_telegram(city, contact, ad_text, window='', public_token='', photo_ur
             pass
 
 
-UNPAID_LIMIT = 2
-
-
-def count_unpaid(schema: str, chat_id: str) -> int:
-    """Считает заявки клиента, за которые ещё не поступила оплата"""
+def count_active_ads(schema: str, chat_id: str) -> int:
+    """Считает действующие объявления клиента: один абонент — одно объявление"""
     safe_chat = str(chat_id).replace("'", "''")
     conn = psycopg2.connect(os.environ['DATABASE_URL'])
     conn.autocommit = True
@@ -116,7 +113,11 @@ def count_unpaid(schema: str, chat_id: str) -> int:
         f"SELECT COUNT(*) FROM {schema}.ad_requests r "
         f"WHERE r.client_chat_id = '{safe_chat}' "
         f"AND r.status <> 'rejected' "
-        f"AND NOT EXISTS (SELECT 1 FROM {schema}.payments p WHERE p.request_id = r.id)"
+        f"AND (NOT EXISTS ("
+        f"      SELECT 1 FROM {schema}.campaigns c WHERE c.request_id = r.id) "
+        f"  OR EXISTS ("
+        f"      SELECT 1 FROM {schema}.campaigns c WHERE c.request_id = r.id "
+        f"      AND c.state = 'running'))"
     )
     total = cur.fetchone()[0] or 0
     cur.close()
@@ -242,13 +243,14 @@ def handler(event: dict, context) -> dict:
             'isBase64Encoded': False,
         }
 
-    if count_unpaid(schema, chat_found) >= UNPAID_LIMIT:
+    if count_active_ads(schema, chat_found) >= 1:
         return {
             'statusCode': 400,
             'headers': CORS_HEADERS,
             'body': json.dumps({
-                'error': f'У вас уже {UNPAID_LIMIT} объявления без оплаты. '
-                         f'Оплатите их, и можно будет подать новое.',
+                'error': 'У вас уже есть объявление. Один абонент может размещать '
+                         'только одно объявление — измените текущее в личном кабинете '
+                         'или дождитесь окончания его показов.',
                 'limit_reached': True,
             }, ensure_ascii=False),
             'isBase64Encoded': False,

@@ -60,6 +60,7 @@ export interface CityGroup {
   is_active: boolean;
   sort_order: number;
   tz_offset: number;
+  auto_clean: boolean;
 }
 
 export const STATE_LABELS: Record<string, string> = {

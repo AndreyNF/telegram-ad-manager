@@ -202,8 +202,8 @@ def list_data(cur, schema: str) -> dict:
         })
 
     cur.execute(
-        f"SELECT id, city, chat_id, members, slots, is_active, sort_order, tz_offset "
-        f"FROM {schema}.city_groups ORDER BY sort_order, city"
+        f"SELECT id, city, chat_id, members, slots, is_active, sort_order, tz_offset, "
+        f"auto_clean FROM {schema}.city_groups ORDER BY sort_order, city"
     )
     groups = [{
         'id': g[0],
@@ -214,6 +214,7 @@ def list_data(cur, schema: str) -> dict:
         'is_active': g[5],
         'sort_order': g[6],
         'tz_offset': g[7],
+        'auto_clean': g[8],
     } for g in cur.fetchall()]
 
     cur.execute(
@@ -679,6 +680,17 @@ def handler(event: dict, context) -> dict:
                 f"UPDATE {schema}.city_groups SET is_active = NOT is_active WHERE id = {group_id}"
             )
             return json_response(200, {'ok': True})
+
+        if action == 'toggle_clean':
+            group_id = int(body.get('id', 0))
+            cur.execute(
+                f"UPDATE {schema}.city_groups SET auto_clean = NOT auto_clean "
+                f"WHERE id = {group_id} RETURNING auto_clean"
+            )
+            row = cur.fetchone()
+            if not row:
+                return json_response(404, {'error': 'Группа не найдена'})
+            return json_response(200, {'ok': True, 'auto_clean': row[0]})
 
         return json_response(400, {'error': 'Неизвестное действие'})
     finally:

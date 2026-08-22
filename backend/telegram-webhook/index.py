@@ -213,6 +213,83 @@ def save_group(schema: str, chat_id: int, title: str) -> None:
     conn.close()
 
 
+def has_active_ad(schema: str, user_id: int, username: str) -> bool:
+    """Проверяет, есть ли у автора оплаченное объявление, которое сейчас крутится"""
+    safe_user = (username or '').lower().replace("'", "''")
+    conn = psycopg2.connect(os.environ['DATABASE_URL'])
+    conn.autocommit = True
+    cur = conn.cursor()
+    by_name = (
+        f" OR lower(ltrim(r.contact, '@')) = '{safe_user}'"
+        f" OR lower(r.client_username) = '{safe_user}'"
+    ) if safe_user else ''
+    cur.execute(
+        f"SELECT COUNT(*) FROM {schema}.campaigns c "
+        f"JOIN {schema}.ad_requests r ON r.id = c.request_id "
+        f"WHERE c.state = 'running' AND ("
+        f"  r.client_chat_id = '{int(user_id)}'{by_name})"
+    )
+    total = int(cur.fetchone()[0] or 0)
+    cur.close()
+    conn.close()
+    return total > 0
+
+
+def is_moderated_group(schema: str, chat_id: int) -> bool:
+    """Отвечает, включена ли для этой группы очистка чужих объявлений"""
+    conn = psycopg2.connect(os.environ['DATABASE_URL'])
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT COUNT(*) FROM {schema}.city_groups "
+        f"WHERE chat_id = '{int(chat_id)}' AND is_active = true AND auto_clean = true"
+    )
+    total = int(cur.fetchone()[0] or 0)
+    cur.close()
+    conn.close()
+    return total > 0
+
+
+def moderate_group_message(schema: str, message: dict, chat_id: int) -> bool:
+    """Удаляет сообщение из группы, если у автора нет оплаченного размещения"""
+    from_user = message.get('from') or {}
+    user_id = from_user.get('id')
+    if not user_id or from_user.get('is_bot'):
+        return False
+    if message.get('new_chat_members') or message.get('left_chat_member'):
+        return False
+    message_id = message.get('message_id')
+    if not message_id:
+        return False
+
+    if not is_moderated_group(schema, chat_id):
+        return False
+
+    token = os.environ['TELEGRAM_BOT_TOKEN']
+    member = call_telegram(token, 'getChatMember',
+                           {'chat_id': chat_id, 'user_id': user_id}, budget=6.0)
+    status = ((member.get('result') or {}).get('status') or '')
+    if status in ('creator', 'administrator'):
+        return False
+
+    if has_active_ad(schema, user_id, from_user.get('username', '')):
+        return False
+
+    call_telegram(token, 'deleteMessage',
+                  {'chat_id': chat_id, 'message_id': message_id}, budget=6.0)
+
+    try:
+        call_telegram(token, 'sendMessage', {
+            'chat_id': user_id,
+            'text': 'Ваше сообщение удалено из группы: размещать объявления могут '
+                    'только участники с оплаченным размещением.\n\n'
+                    'Подать объявление — /post',
+        }, budget=5.0)
+    except Exception:
+        pass
+    return True
+
+
 def handler(event: dict, context) -> dict:
     """Принимает обновления Telegram-бота: запоминает chat_id пользователя при первом /start
     и автоматически определяет ID группы города, когда бота в неё добавляют"""
@@ -286,6 +363,19 @@ def handler(event: dict, context) -> dict:
             save_group(schema, chat_id, chat.get('title', ''))
         except Exception:
             pass
+
+        if update.get('message') or update.get('edited_message'):
+            try:
+                moderate_group_message(schema, message, chat_id)
+            except Exception:
+                pass
+
+        return {
+            'statusCode': 200,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({'ok': True}),
+            'isBase64Encoded': False,
+        }
 
     from_user = message.get('from') or {}
     username = from_user.get('username')
