@@ -107,23 +107,13 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        {token && (
-          <button
-            className="btn btn-primary"
-            disabled={busy || paying}
-            onClick={payOnline}
-          >
-            <Icon name="CreditCard" size={15} />
-            {paying ? 'Открываем оплату...' : 'Оплатить картой'}
-          </button>
-        )}
         <button
-          className="btn btn-ghost"
-          disabled={busy || paying}
-          onClick={() => onAction({ action: 'renew', plan })}
+          className="btn btn-primary"
+          disabled={busy || paying || !token}
+          onClick={payOnline}
         >
-          <Icon name="RefreshCw" size={15} />
-          {busy ? 'Отправляем...' : 'Оплачу иначе'}
+          <Icon name="CreditCard" size={15} />
+          {paying ? 'Открываем оплату...' : 'Оплатить картой'}
         </button>
       </div>
 
