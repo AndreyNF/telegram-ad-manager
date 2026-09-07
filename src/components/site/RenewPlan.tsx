@@ -121,6 +121,18 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
         Оплата в USDT, BTC, ETH и других криптовалютах — сумма пересчитается
         автоматически. Показы продлятся сразу после подтверждения платежа.
       </p>
+      <p className="text-xs" style={{ color: 'var(--hero-muted)' }}>
+        Нет криптовалюты? Купить её через СБП можно в боте{' '}
+        <a
+          href="https://t.me/MigSwap_bot"
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: 'var(--hero-accent)', textDecoration: 'underline' }}
+        >
+          @MigSwap_bot
+        </a>
+        .
+      </p>
     </div>
   );
 };
