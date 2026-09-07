@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { API, formatDate } from '@/lib/api';
 import { PLANS } from './Pricing';
@@ -16,14 +16,6 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
   const [plan, setPlan] = useState(currentPlan || 'week');
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
-  const [cryptoOn, setCryptoOn] = useState(false);
-
-  useEffect(() => {
-    fetch(API.payment)
-      .then((r) => r.json())
-      .then((d) => setCryptoOn(Boolean(d?.crypto)))
-      .catch(() => setCryptoOn(false));
-  }, []);
 
   const payOnline = async (payMethod?: 'crypto') => {
     if (!token) return;
@@ -118,25 +110,16 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
         <button
           className="btn btn-primary"
           disabled={busy || paying || !token}
-          onClick={() => payOnline()}
+          onClick={() => payOnline('crypto')}
         >
-          <Icon name="CreditCard" size={15} />
-          {paying ? 'Открываем оплату...' : 'Оплатить картой'}
+          <Icon name="Bitcoin" size={15} />
+          {paying ? 'Открываем оплату...' : 'Оплатить криптовалютой'}
         </button>
-        {cryptoOn && (
-          <button
-            className="btn btn-ghost"
-            disabled={busy || paying || !token}
-            onClick={() => payOnline('crypto')}
-          >
-            <Icon name="Bitcoin" size={15} />
-            Криптовалютой
-          </button>
-        )}
       </div>
 
       <p className="text-xs" style={{ color: 'var(--hero-muted)' }}>
-        Оплата картой или через СБП — показы продлятся автоматически сразу после платежа.
+        Оплата в USDT, BTC, ETH и других криптовалютах — сумма пересчитается
+        автоматически. Показы продлятся сразу после подтверждения платежа.
       </p>
     </div>
   );

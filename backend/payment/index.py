@@ -26,8 +26,6 @@ PLANS = {
     'month': ('Месяц', 10000, 30),
 }
 
-PAY_URL = 'https://anypay.io/merchant/pay'
-FK_PAY_URL = 'https://pay.freekassa.com/'
 TRYBIT_API = 'https://api.trybit.com/v2/invoice/create'
 
 
@@ -61,49 +59,6 @@ def db():
 
 def amount_str(amount) -> str:
     return f'{float(amount):.2f}'
-
-
-def build_pay_url(order_id: int, amount, desc: str, email: str = '') -> str:
-    """Собирает ссылку на оплату AnyPay с подписью магазина"""
-    merchant = os.environ['ANYPAY_MERCHANT_ID'].strip()
-    secret = os.environ['ANYPAY_SECRET_KEY'].strip()
-    total = amount_str(amount)
-    sign = hashlib.sha256(
-        f'{merchant}:{total}:{secret}:RUB:{desc}:{order_id}'.encode()
-    ).hexdigest()
-    params = {
-        'sign': sign,
-        'currency': 'RUB',
-        'desc': desc,
-    }
-    if email:
-        params['email'] = email
-    url = f'{PAY_URL}/{merchant}/{order_id}/{total}/RUB/'
-    return url + '?' + urllib.parse.urlencode(params)
-
-
-def freekassa_enabled() -> bool:
-    return bool(os.environ.get('FREEKASSA_MERCHANT_ID') and os.environ.get('FREEKASSA_SECRET_1'))
-
-
-def build_freekassa_url(order_id: int, amount, email: str = '') -> str:
-    """Собирает ссылку на оплату Free-Kassa с подписью магазина"""
-    merchant = os.environ['FREEKASSA_MERCHANT_ID'].strip()
-    secret = os.environ['FREEKASSA_SECRET_1'].strip()
-    total = amount_str(amount)
-    sign = hashlib.md5(
-        f'{merchant}:{total}:{secret}:RUB:{order_id}'.encode()
-    ).hexdigest()
-    params = {
-        'm': merchant,
-        'oa': total,
-        'o': order_id,
-        'currency': 'RUB',
-        's': sign,
-    }
-    if email:
-        params['em'] = email
-    return FK_PAY_URL + '?' + urllib.parse.urlencode(params)
 
 
 def trybit_enabled() -> bool:
@@ -193,10 +148,7 @@ def create_order(schema: str, body: dict) -> dict:
     if not token or plan not in PLANS:
         return json_response(400, {'error': 'Укажите объявление и тариф'})
 
-    method = (body.get('method') or '').strip().lower()
-    if method == 'crypto' and not trybit_enabled():
-        return json_response(503, {'error': 'Оплата криптовалютой ещё не настроена'})
-    if not (freekassa_enabled() or trybit_enabled() or os.environ.get('ANYPAY_MERCHANT_ID')):
+    if not trybit_enabled():
         return json_response(503, {'error': 'Онлайн-оплата ещё не настроена'})
 
     conn = db()
@@ -230,19 +182,11 @@ def create_order(schema: str, body: dict) -> dict:
         cur.close()
         conn.close()
 
-    desc = f'Размещение объявления, {label}'
-    if method == 'crypto':
-        try:
-            pay_url = build_trybit_url(order_id, price)
-        except Exception:
-            return json_response(502, {'error': 'Не удалось создать счёт на оплату криптовалютой'})
-        provider = 'trybit'
-    elif freekassa_enabled():
-        pay_url = build_freekassa_url(order_id, price)
-        provider = 'freekassa'
-    else:
-        pay_url = build_pay_url(order_id, price, desc)
-        provider = 'anypay'
+    try:
+        pay_url = build_trybit_url(order_id, price)
+    except Exception:
+        return json_response(502, {'error': 'Не удалось создать счёт на оплату'})
+    provider = 'trybit'
 
     return json_response(200, {
         'ok': True,
@@ -256,7 +200,7 @@ def create_order(schema: str, body: dict) -> dict:
 
 
 def apply_payment(schema: str, order_id: int, amount: str, operation_id: str,
-                  provider: str = 'AnyPay') -> str:
+                  provider: str = 'Trybit') -> str:
     """Включает или продлевает показы после подтверждённой оплаты"""
     conn = db()
     cur = conn.cursor()
@@ -370,7 +314,7 @@ def parse_form(event: dict) -> dict:
 
 
 def handler(event: dict, context) -> dict:
-    """Онлайн-оплата Free-Kassa и AnyPay: создаёт ссылку на оплату и принимает
+    """Онлайн-оплата криптовалютой через Trybit: создаёт счёт на оплату и принимает
     уведомления о платеже, автоматически запуская или продлевая показы объявления"""
     method = event.get('httpMethod', 'GET')
 
@@ -383,10 +327,8 @@ def handler(event: dict, context) -> dict:
     if method == 'GET':
         return json_response(200, {
             'ok': True,
-            'configured': bool(freekassa_enabled() or trybit_enabled()
-                               or os.environ.get('ANYPAY_MERCHANT_ID')),
-            'provider': 'freekassa' if freekassa_enabled() else 'anypay',
-            'crypto': trybit_enabled(),
+            'configured': trybit_enabled(),
+            'provider': 'trybit',
         })
 
     if params.get('tb') == '1' or params.get('action') == 'trybit':
@@ -421,55 +363,6 @@ def handler(event: dict, context) -> dict:
         result = apply_payment(schema, int(order_id), found[0], operation, 'Trybit')
         return text_response(200 if result == 'YES' else 400,
                              'OK' if result == 'YES' else result)
-
-    if params.get('fk') == '1' or params.get('action') == 'freekassa':
-        data = parse_form(event)
-        if not data:
-            data = json.loads(event.get('body') or '{}')
-
-        merchant = os.environ.get('FREEKASSA_MERCHANT_ID', '').strip()
-        secret2 = os.environ.get('FREEKASSA_SECRET_2', '').strip()
-        order_id = data.get('MERCHANT_ORDER_ID', '')
-        amount = data.get('AMOUNT', '')
-
-        expected = hashlib.md5(
-            f"{merchant}:{amount}:{secret2}:{order_id}".encode()
-        ).hexdigest()
-        if expected != (data.get('SIGN') or '').lower():
-            return text_response(400, 'wrong sign')
-        if data.get('MERCHANT_ID', '') != merchant:
-            return text_response(400, 'wrong merchant')
-        if not str(order_id).isdigit():
-            return text_response(400, 'wrong order')
-
-        operation = str(data.get('intid') or order_id)
-        result = apply_payment(schema, int(order_id), amount, operation, 'Free-Kassa')
-        return text_response(200 if result == 'YES' else 400,
-                             'YES' if result == 'YES' else result)
-
-    if params.get('notify') == '1' or params.get('action') == 'notify':
-        data = parse_form(event)
-        if not data:
-            data = json.loads(event.get('body') or '{}')
-
-        merchant = os.environ.get('ANYPAY_MERCHANT_ID', '').strip()
-        secret = os.environ.get('ANYPAY_SECRET_KEY', '').strip()
-        order_id = data.get('pay_id', '')
-        amount = data.get('amount', '')
-        currency = data.get('currency', 'RUB')
-
-        expected = hashlib.sha256(
-            f"{amount}:{currency}:{secret}:{merchant}:{order_id}".encode()
-        ).hexdigest()
-        if expected != (data.get('sign') or '').lower():
-            return text_response(400, 'wrong sign')
-        if data.get('merchant_id', '') != merchant:
-            return text_response(400, 'wrong merchant')
-        if not str(order_id).isdigit():
-            return text_response(400, 'wrong order')
-
-        result = apply_payment(schema, int(order_id), amount, str(order_id))
-        return text_response(200 if result == 'YES' else 400, 'OK' if result == 'YES' else result)
 
     body = json.loads(event.get('body') or '{}')
     if (body.get('action') or 'create') == 'create':
