@@ -183,7 +183,8 @@ def create_order(schema: str, body: dict) -> dict:
     })
 
 
-def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) -> str:
+def apply_payment(schema: str, order_id: int, amount: str, operation_id: str,
+                  provider: str = 'AnyPay') -> str:
     """Включает или продлевает показы после подтверждённой оплаты"""
     conn = db()
     cur = conn.cursor()
@@ -239,7 +240,7 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
                 f"+ INTERVAL '{days} days', state = 'running', reminder_sent_at = NULL, "
                 f"days_paid = COALESCE(days_paid, 0) + {days}, "
                 f"price_amount = COALESCE(price_amount, 0) + {price}, "
-                f"paid_at = CURRENT_TIMESTAMP, payment_note = 'AnyPay', "
+                f"paid_at = CURRENT_TIMESTAMP, payment_note = '{esc(provider)}', "
                 f"next_run_at = CURRENT_TIMESTAMP, fail_streak = 0, last_error = NULL "
                 f"WHERE id = {int(campaign_id)}"
             )
@@ -253,7 +254,7 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
                 f"({request_id}, '{esc(city)}', 15, 'running', CURRENT_TIMESTAMP, {days}, "
                 f"CURRENT_TIMESTAMP + INTERVAL '{days} days', {int(win_start)}, "
                 f"{int(win_end)}, {int(tz_offset)}, {price}, CURRENT_TIMESTAMP, "
-                f"'AnyPay') RETURNING id"
+                f"'{esc(provider)}') RETURNING id"
             )
             campaign_id = cur.fetchone()[0]
             cur.execute(
@@ -265,7 +266,7 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
             f"INSERT INTO {schema}.payments "
             f"(campaign_id, request_id, amount, days, kind, note) VALUES "
             f"({int(campaign_id)}, {request_id}, {price}, {days}, '{kind_sql}', "
-            f"'AnyPay #{esc(operation_id)[:40]}')"
+            f"'{esc(provider)} #{esc(operation_id)[:40]}')"
         )
         cur.execute(
             f"UPDATE {schema}.ad_requests SET renew_plan = NULL, renew_at = NULL "
@@ -276,7 +277,7 @@ def apply_payment(schema: str, order_id: int, amount: str, operation_id: str) ->
         conn.close()
 
     label = PLANS.get(plan, (plan, 0, 0))[0]
-    notify_admin(f'Оплата получена: заявка #{request_id} ({city})\n'
+    notify_admin(f'Оплата получена ({provider}): заявка #{request_id} ({city})\n'
                  f'Тариф: {label} — {amount_str(price)} ₽\nПоказы запущены автоматически.')
     notify_client(client_chat,
                   f'Оплата получена! Показы объявления ({city}) активны '
@@ -335,7 +336,7 @@ def handler(event: dict, context) -> dict:
             return text_response(400, 'wrong order')
 
         operation = str(data.get('intid') or order_id)
-        result = apply_payment(schema, int(order_id), amount, operation)
+        result = apply_payment(schema, int(order_id), amount, operation, 'Free-Kassa')
         return text_response(200 if result == 'YES' else 400,
                              'YES' if result == 'YES' else result)
 
