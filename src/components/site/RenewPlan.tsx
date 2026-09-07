@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { API, formatDate } from '@/lib/api';
 import { PLANS } from './Pricing';
@@ -16,8 +16,16 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
   const [plan, setPlan] = useState(currentPlan || 'week');
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
+  const [cryptoOn, setCryptoOn] = useState(false);
 
-  const payOnline = async () => {
+  useEffect(() => {
+    fetch(API.payment)
+      .then((r) => r.json())
+      .then((d) => setCryptoOn(Boolean(d?.crypto)))
+      .catch(() => setCryptoOn(false));
+  }, []);
+
+  const payOnline = async (payMethod?: 'crypto') => {
     if (!token) return;
     setPaying(true);
     setPayError('');
@@ -25,7 +33,7 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
       const res = await fetch(API.payment, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', token, plan }),
+        body: JSON.stringify({ action: 'create', token, plan, method: payMethod }),
       });
       const data = await res.json();
       if (!res.ok || !data.pay_url) {
@@ -110,11 +118,21 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
         <button
           className="btn btn-primary"
           disabled={busy || paying || !token}
-          onClick={payOnline}
+          onClick={() => payOnline()}
         >
           <Icon name="CreditCard" size={15} />
           {paying ? 'Открываем оплату...' : 'Оплатить картой'}
         </button>
+        {cryptoOn && (
+          <button
+            className="btn btn-ghost"
+            disabled={busy || paying || !token}
+            onClick={() => payOnline('crypto')}
+          >
+            <Icon name="Bitcoin" size={15} />
+            Криптовалютой
+          </button>
+        )}
       </div>
 
       <p className="text-xs" style={{ color: 'var(--hero-muted)' }}>
