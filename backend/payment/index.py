@@ -24,6 +24,7 @@ PLANS = {
 }
 
 PAY_URL = 'https://anypay.io/merchant/pay'
+FK_PAY_URL = 'https://pay.freekassa.com/'
 
 
 def esc(value) -> str:
@@ -77,6 +78,30 @@ def build_pay_url(order_id: int, amount, desc: str, email: str = '') -> str:
     return url + '?' + urllib.parse.urlencode(params)
 
 
+def freekassa_enabled() -> bool:
+    return bool(os.environ.get('FREEKASSA_MERCHANT_ID') and os.environ.get('FREEKASSA_SECRET_1'))
+
+
+def build_freekassa_url(order_id: int, amount, email: str = '') -> str:
+    """Собирает ссылку на оплату Free-Kassa с подписью магазина"""
+    merchant = os.environ['FREEKASSA_MERCHANT_ID'].strip()
+    secret = os.environ['FREEKASSA_SECRET_1'].strip()
+    total = amount_str(amount)
+    sign = hashlib.md5(
+        f'{merchant}:{total}:{secret}:RUB:{order_id}'.encode()
+    ).hexdigest()
+    params = {
+        'm': merchant,
+        'oa': total,
+        'o': order_id,
+        'currency': 'RUB',
+        's': sign,
+    }
+    if email:
+        params['em'] = email
+    return FK_PAY_URL + '?' + urllib.parse.urlencode(params)
+
+
 def notify_admin(text: str) -> None:
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     chat_id = os.environ.get('TELEGRAM_ADMIN_CHAT_ID')
@@ -105,7 +130,7 @@ def create_order(schema: str, body: dict) -> dict:
     if not token or plan not in PLANS:
         return json_response(400, {'error': 'Укажите объявление и тариф'})
 
-    if not os.environ.get('ANYPAY_MERCHANT_ID'):
+    if not (freekassa_enabled() or os.environ.get('ANYPAY_MERCHANT_ID')):
         return json_response(503, {'error': 'Онлайн-оплата ещё не настроена'})
 
     conn = db()
@@ -140,13 +165,21 @@ def create_order(schema: str, body: dict) -> dict:
         conn.close()
 
     desc = f'Размещение объявления, {label}'
+    if freekassa_enabled():
+        pay_url = build_freekassa_url(order_id, price)
+        provider = 'freekassa'
+    else:
+        pay_url = build_pay_url(order_id, price, desc)
+        provider = 'anypay'
+
     return json_response(200, {
         'ok': True,
         'order_id': order_id,
         'amount': price,
         'plan_label': label,
         'city': city,
-        'pay_url': build_pay_url(order_id, price, desc),
+        'provider': provider,
+        'pay_url': pay_url,
     })
 
 
@@ -264,8 +297,8 @@ def parse_form(event: dict) -> dict:
 
 
 def handler(event: dict, context) -> dict:
-    """Онлайн-оплата AnyPay: создаёт ссылку на оплату и принимает уведомления
-    о платеже, автоматически запуская или продлевая показы объявления"""
+    """Онлайн-оплата Free-Kassa и AnyPay: создаёт ссылку на оплату и принимает
+    уведомления о платеже, автоматически запуская или продлевая показы объявления"""
     method = event.get('httpMethod', 'GET')
 
     if method == 'OPTIONS':
@@ -277,8 +310,34 @@ def handler(event: dict, context) -> dict:
     if method == 'GET':
         return json_response(200, {
             'ok': True,
-            'configured': bool(os.environ.get('ANYPAY_MERCHANT_ID')),
+            'configured': bool(freekassa_enabled() or os.environ.get('ANYPAY_MERCHANT_ID')),
+            'provider': 'freekassa' if freekassa_enabled() else 'anypay',
         })
+
+    if params.get('fk') == '1' or params.get('action') == 'freekassa':
+        data = parse_form(event)
+        if not data:
+            data = json.loads(event.get('body') or '{}')
+
+        merchant = os.environ.get('FREEKASSA_MERCHANT_ID', '').strip()
+        secret2 = os.environ.get('FREEKASSA_SECRET_2', '').strip()
+        order_id = data.get('MERCHANT_ORDER_ID', '')
+        amount = data.get('AMOUNT', '')
+
+        expected = hashlib.md5(
+            f"{merchant}:{amount}:{secret2}:{order_id}".encode()
+        ).hexdigest()
+        if expected != (data.get('SIGN') or '').lower():
+            return text_response(400, 'wrong sign')
+        if data.get('MERCHANT_ID', '') != merchant:
+            return text_response(400, 'wrong merchant')
+        if not str(order_id).isdigit():
+            return text_response(400, 'wrong order')
+
+        operation = str(data.get('intid') or order_id)
+        result = apply_payment(schema, int(order_id), amount, operation)
+        return text_response(200 if result == 'YES' else 400,
+                             'YES' if result == 'YES' else result)
 
     if params.get('notify') == '1' or params.get('action') == 'notify':
         data = parse_form(event)
