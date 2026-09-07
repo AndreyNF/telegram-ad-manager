@@ -1,5 +1,4 @@
 import Icon from '@/components/ui/icon';
-import { BOT_URL } from '@/lib/api';
 
 const Footer = () => (
   <footer style={{ borderTop: '1px solid var(--hero-x-rule)' }}>
@@ -12,14 +11,6 @@ const Footer = () => (
         >
           Постовой
         </span>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-6 text-sm" style={{ color: 'var(--hero-muted)' }}>
-        <a href={BOT_URL} target="_blank" rel="noreferrer" className="flex items-center gap-2">
-          <Icon name="Send" size={16} />
-          Наш бот
-        </a>
-        <a href="/admin">Вход для модератора</a>
       </div>
     </div>
   </footer>
