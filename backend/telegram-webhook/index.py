@@ -137,20 +137,23 @@ def send_cabinet(schema: str, chat_id: int) -> None:
     site = os.environ.get('SITE_URL', '').rstrip('/')
     rows = get_user_ads(schema, chat_id)
 
-    if not rows:
-        call_telegram(token, 'sendMessage', {
-            'chat_id': chat_id,
-            'text': 'У вас пока нет объявлений. Оставьте заявку на сайте — '
-                    'после этого личный кабинет откроется здесь.'
-                    + (f'\n{site}' if site else ''),
-        })
-        return
-
     if not site:
         call_telegram(token, 'sendMessage', {
             'chat_id': chat_id,
             'text': 'Личный кабинет временно недоступен.',
         })
+        return
+
+    if not rows:
+        call_telegram(token, 'sendMessage', {
+            'chat_id': chat_id,
+            'text': 'У вас пока нет объявлений. Подайте первое прямо здесь — '
+                    'выберите город, время показов и тариф, а модератор проверит текст.',
+            'reply_markup': json.dumps({'inline_keyboard': [[{
+                'text': 'Подать объявление',
+                'web_app': {'url': f'{site}/app'},
+            }]]}),
+        }, budget=6.0)
         return
 
     lines = ['Ваши объявления:']
@@ -178,8 +181,8 @@ def setup_commands() -> None:
     token = os.environ['TELEGRAM_BOT_TOKEN']
     call_telegram(token, 'setMyCommands', {
         'commands': json.dumps([
-            {'command': 'post', 'description': 'Подать объявление'},
-            {'command': 'cabinet', 'description': 'Личный кабинет объявления'},
+            {'command': 'cabinet', 'description': 'Кабинет: подать и вести объявление'},
+            {'command': 'post', 'description': 'Подать объявление в чате'},
             {'command': 'start', 'description': 'Начать работу с ботом'},
         ]),
     })
@@ -462,15 +465,21 @@ def handler(event: dict, context) -> dict:
         elif lower.startswith('/start'):
             try:
                 token = os.environ['TELEGRAM_BOT_TOKEN']
-                call_telegram(token, 'sendMessage', {
+                site = os.environ.get('SITE_URL', '').rstrip('/')
+                params = {
                     'chat_id': chat_id,
                     'text': 'Готово! Здесь вы будете получать уведомления по объявлению.\n\n'
-                            '/post — подать объявление прямо здесь, без захода на сайт.\n'
-                            '/cabinet — личный кабинет: изменить текст и фото, поставить '
-                            'показы на паузу, продлить тариф и посмотреть статистику.',
-                })
+                            'Кнопка ниже открывает кабинет: подать объявление, изменить '
+                            'текст и фото, поставить показы на паузу, продлить тариф '
+                            'и посмотреть статистику.',
+                }
+                if site:
+                    params['reply_markup'] = json.dumps({'inline_keyboard': [[{
+                        'text': 'Открыть кабинет',
+                        'web_app': {'url': f'{site}/app'},
+                    }]]})
+                call_telegram(token, 'sendMessage', params, budget=6.0)
                 setup_commands()
-                send_cabinet(schema, chat_id)
             except Exception:
                 pass
 
