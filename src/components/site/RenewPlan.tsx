@@ -17,7 +17,7 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
 
-  const payOnline = async (payMethod?: 'crypto') => {
+  const payOnline = async () => {
     if (!token) return;
     setPaying(true);
     setPayError('');
@@ -25,7 +25,7 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
       const res = await fetch(API.payment, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', token, plan, method: payMethod }),
+        body: JSON.stringify({ action: 'create', token, plan }),
       });
       const data = await res.json();
       if (!res.ok || !data.pay_url) {
@@ -110,28 +110,15 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
         <button
           className="btn btn-primary"
           disabled={busy || paying || !token}
-          onClick={() => payOnline('crypto')}
+          onClick={() => payOnline()}
         >
-          <Icon name="Bitcoin" size={15} />
-          {paying ? 'Открываем оплату...' : 'Оплатить криптовалютой'}
+          <Icon name="CreditCard" size={15} />
+          {paying ? 'Открываем оплату...' : 'Оплатить картой'}
         </button>
       </div>
 
       <p className="text-xs" style={{ color: 'var(--hero-muted)' }}>
-        Оплата в USDT, BTC, ETH и других криптовалютах — сумма пересчитается
-        автоматически. Показы продлятся сразу после подтверждения платежа.
-      </p>
-      <p className="text-xs" style={{ color: 'var(--hero-muted)' }}>
-        Нет криптовалюты? Купить её через СБП можно в боте{' '}
-        <a
-          href="https://t.me/MigSwap_bot"
-          target="_blank"
-          rel="noreferrer"
-          style={{ color: 'var(--hero-accent)', textDecoration: 'underline' }}
-        >
-          @MigSwap_bot
-        </a>
-        .
+        Оплата картой или через СБП — показы продлятся автоматически сразу после платежа.
       </p>
     </div>
   );

@@ -22,10 +22,10 @@
       "expectedStatus": 400
     },
     {
-      "name": "Уведомление Trybit с неверной подписью отклоняется",
+      "name": "Уведомление Free-Kassa с неверной подписью отклоняется",
       "method": "POST",
-      "path": "/?tb=1",
-      "body": {"status": "success", "order_id": "1", "invoice_id": "X", "token": "a.b.c"},
+      "path": "/?fk=1",
+      "body": {"MERCHANT_ID": "1", "AMOUNT": "300.00", "MERCHANT_ORDER_ID": "1", "SIGN": "bad"},
       "expectedStatus": 400
     }
   ]
