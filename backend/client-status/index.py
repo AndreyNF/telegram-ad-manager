@@ -260,8 +260,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET state = 'stopped', "
                     f"stopped_at = CURRENT_TIMESTAMP, paused_until = NULL, "
-                    f"time_left_seconds = GREATEST(0, CASE WHEN expires_at IS NULL THEN NULL "
-                    f"  ELSE EXTRACT(EPOCH FROM (expires_at - CURRENT_TIMESTAMP))::int END) "
+                    f"last_tick_at = CURRENT_TIMESTAMP "
                     f"WHERE id = {int(campaign_id)}"
                 )
                 return json_response(200, {'ok': True})
@@ -281,7 +280,8 @@ def handler(event: dict, context) -> dict:
                     })
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET state = 'running', stopped_at = NULL, "
-                    f"time_left_seconds = NULL, paused_until = NULL, fail_streak = 0, "
+                    f"paused_until = NULL, fail_streak = 0, "
+                    f"last_tick_at = CURRENT_TIMESTAMP, "
                     f"expires_at = CURRENT_TIMESTAMP + INTERVAL '{left} seconds', "
                     f"next_run_at = CURRENT_TIMESTAMP WHERE id = {int(campaign_id)}"
                 )
@@ -300,6 +300,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET "
                     f"paused_until = CURRENT_TIMESTAMP + INTERVAL '{minutes} minutes', "
+                    f"last_tick_at = CURRENT_TIMESTAMP, "
                     f"expires_at = expires_at + INTERVAL '{minutes} minutes' "
                     f"WHERE id = {int(campaign_id)}"
                 )
@@ -308,6 +309,7 @@ def handler(event: dict, context) -> dict:
             if action == 'resume':
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET paused_until = NULL, "
+                    f"last_tick_at = CURRENT_TIMESTAMP, "
                     f"next_run_at = CURRENT_TIMESTAMP WHERE id = {int(campaign_id)}"
                 )
                 return json_response(200, {'ok': True})

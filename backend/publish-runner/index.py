@@ -195,6 +195,22 @@ def send_expiry_reminders(cur, schema: str, token: str) -> int:
     return sent
 
 
+IN_WINDOW_SQL = (
+    "(window_start_hour = window_end_hour OR ("
+    "  CASE WHEN window_start_hour < window_end_hour THEN"
+    "    EXTRACT(HOUR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"
+    "      + (tz_offset || ' hours')::interval)) >= window_start_hour"
+    "    AND EXTRACT(HOUR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"
+    "      + (tz_offset || ' hours')::interval)) < window_end_hour"
+    "  ELSE"
+    "    EXTRACT(HOUR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"
+    "      + (tz_offset || ' hours')::interval)) >= window_start_hour"
+    "    OR EXTRACT(HOUR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"
+    "      + (tz_offset || ' hours')::interval)) < window_end_hour"
+    "  END))"
+)
+
+
 def minutes_until_window(utc_hour: int, utc_minute: int, start: int, end: int, tz_offset: int) -> int:
     """Возвращает 0, если сейчас внутри разрешённого окна, иначе минуты до его начала"""
     if start == end:
@@ -240,8 +256,33 @@ def handler(event: dict, context) -> dict:
     cur = conn.cursor()
 
     cur.execute(
-        f"UPDATE {schema}.campaigns SET state = 'expired', stopped_at = CURRENT_TIMESTAMP "
-        f"WHERE state = 'running' AND expires_at IS NOT NULL AND expires_at <= CURRENT_TIMESTAMP "
+        f"UPDATE {schema}.campaigns SET "
+        f"time_left_seconds = GREATEST(0, COALESCE(time_left_seconds, 0) - "
+        f"  LEAST(3600, GREATEST(0, EXTRACT(EPOCH FROM "
+        f"    (CURRENT_TIMESTAMP - COALESCE(last_tick_at, CURRENT_TIMESTAMP)))::int))), "
+        f"last_tick_at = CURRENT_TIMESTAMP "
+        f"WHERE state = 'running' "
+        f"AND (paused_until IS NULL OR paused_until <= CURRENT_TIMESTAMP) "
+        f"AND {IN_WINDOW_SQL}"
+    )
+
+    cur.execute(
+        f"UPDATE {schema}.campaigns SET last_tick_at = CURRENT_TIMESTAMP "
+        f"WHERE state <> 'running' "
+        f"OR (paused_until IS NOT NULL AND paused_until > CURRENT_TIMESTAMP) "
+        f"OR NOT {IN_WINDOW_SQL}"
+    )
+
+    cur.execute(
+        f"UPDATE {schema}.campaigns SET expires_at = CURRENT_TIMESTAMP "
+        f"+ (COALESCE(time_left_seconds, 0) || ' seconds')::interval "
+        f"WHERE state = 'running'"
+    )
+
+    cur.execute(
+        f"UPDATE {schema}.campaigns SET state = 'expired', stopped_at = CURRENT_TIMESTAMP, "
+        f"time_left_seconds = 0 "
+        f"WHERE state = 'running' AND COALESCE(time_left_seconds, 0) <= 0 "
         f"RETURNING request_id"
     )
     expired_rows = cur.fetchall()

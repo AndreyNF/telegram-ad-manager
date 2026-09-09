@@ -199,11 +199,17 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
             {[
               { label: 'Публикаций', value: c.posts_sent, icon: 'Send' },
               { label: 'Раз в', value: `${c.interval_minutes} мин`, icon: 'Repeat' },
-              {
-                label: `Действует до · ${tzLabel(data.tz_offset)}`,
-                value: formatDateTz(c.expires_at, data.tz_offset),
-                icon: 'CalendarClock',
-              },
+              c.state === 'running'
+                ? {
+                    label: `Действует до · ${tzLabel(data.tz_offset)}`,
+                    value: formatDateTz(c.expires_at, data.tz_offset),
+                    icon: 'CalendarClock',
+                  }
+                : {
+                    label: 'Оплаченное время',
+                    value: leftLabel(c.time_left_seconds || 0),
+                    icon: 'CalendarClock',
+                  },
               ...(data.total_paid > 0
                 ? [{ label: 'Оплачено', value: `${data.total_paid} ₽`, icon: 'Wallet' }]
                 : []),
@@ -353,8 +359,8 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
                 <div className="flex items-start gap-3" style={{ color: 'var(--hero-accent)' }}>
                   <Icon name="Pause" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
                   <span className="text-sm">
-                    Показы на паузе до {formatDate(c.paused_until)}. Срок действия продлён на время
-                    паузы — оплаченные дни не сгорают.
+                    Показы на паузе до {formatDate(c.paused_until)}. Оплаченное время
+                    заморожено — в запасе {leftLabel(c.time_left_seconds || 0)}.
                   </span>
                 </div>
                 <button
@@ -370,8 +376,8 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
             ) : isRunning ? (
               <>
                 <p className="text-sm" style={{ color: 'var(--hero-muted)' }}>
-                  Нужен перерыв? Поставьте показы на паузу — оплаченное время не сгорит, срок
-                  сдвинется ровно на длительность паузы.
+                  Нужен перерыв? Поставьте показы на паузу — оплаченное время замирает
+                  и продолжит расходоваться только после возобновления.
                 </p>
 
                 {!pauseOpen ? (
