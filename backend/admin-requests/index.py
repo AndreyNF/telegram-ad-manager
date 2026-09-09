@@ -309,6 +309,71 @@ def deliver_to_client(cur, schema: str, request_id: int, text: str) -> dict:
     return json_response(200, {'ok': True})
 
 
+def list_finance(cur, schema: str) -> dict:
+    """Считает выручку: итоги, помесячно и список последних платежей"""
+    cur.execute(
+        f"SELECT COALESCE(SUM(amount), 0), COUNT(*), "
+        f"COALESCE(SUM(amount) FILTER ("
+        f"  WHERE created_at >= date_trunc('month', CURRENT_DATE)), 0), "
+        f"COALESCE(SUM(amount) FILTER ("
+        f"  WHERE created_at >= CURRENT_DATE), 0) "
+        f"FROM {schema}.payments"
+    )
+    t = cur.fetchone()
+    totals = {
+        'total': float(t[0] or 0),
+        'count': int(t[1] or 0),
+        'month': float(t[2] or 0),
+        'today': float(t[3] or 0),
+    }
+
+    cur.execute(
+        f"SELECT to_char(date_trunc('month', created_at), 'YYYY-MM'), "
+        f"       SUM(amount), COUNT(*) "
+        f"FROM {schema}.payments GROUP BY 1 ORDER BY 1 DESC LIMIT 12"
+    )
+    months = [
+        {'month': m[0], 'amount': float(m[1] or 0), 'count': int(m[2] or 0)}
+        for m in cur.fetchall()
+    ]
+
+    cur.execute(
+        f"SELECT p.id, p.amount, p.days, p.kind, p.note, p.created_at, "
+        f"       r.id, r.city, r.contact, r.public_token "
+        f"FROM {schema}.payments p "
+        f"JOIN {schema}.ad_requests r ON r.id = p.request_id "
+        f"ORDER BY p.created_at DESC LIMIT 100"
+    )
+    items = [{
+        'id': p[0],
+        'amount': float(p[1] or 0),
+        'days': p[2],
+        'kind': p[3],
+        'note': p[4],
+        'created_at': p[5],
+        'request_id': p[6],
+        'city': p[7],
+        'contact': p[8],
+        'public_token': p[9],
+    } for p in cur.fetchall()]
+
+    cur.execute(
+        f"SELECT r.id, r.city, r.contact, r.renew_plan, r.renew_at, r.renew_method "
+        f"FROM {schema}.ad_requests r WHERE r.renew_at IS NOT NULL "
+        f"ORDER BY r.renew_at DESC LIMIT 50"
+    )
+    pending = [{
+        'id': w[0],
+        'city': w[1],
+        'contact': w[2],
+        'plan': w[3],
+        'created_at': w[4],
+        'method': w[5] or 'manual',
+    } for w in cur.fetchall()]
+
+    return {'totals': totals, 'months': months, 'payments': items, 'pending': pending}
+
+
 def handler(event: dict, context) -> dict:
     """Админка: список заявок, модерация, запуск и остановка открутки, управление группами городов"""
     method = event.get('httpMethod', 'GET')
@@ -348,6 +413,9 @@ def handler(event: dict, context) -> dict:
 
             if params.get('chats'):
                 return json_response(200, {'chats': list_chats(cur, schema)})
+
+            if params.get('finance'):
+                return json_response(200, list_finance(cur, schema))
 
             return json_response(200, list_data(cur, schema))
 
@@ -542,7 +610,9 @@ def handler(event: dict, context) -> dict:
                 f"UPDATE {schema}.ad_requests SET status = 'rejected' WHERE id = {request_id}"
             )
             cur.execute(
-                f"UPDATE {schema}.campaigns SET state = 'stopped', stopped_at = CURRENT_TIMESTAMP "
+                f"UPDATE {schema}.campaigns SET state = 'stopped', stopped_at = CURRENT_TIMESTAMP, "
+                f"time_left_seconds = GREATEST(0, CASE WHEN expires_at IS NULL THEN NULL "
+                f"  ELSE EXTRACT(EPOCH FROM (expires_at - CURRENT_TIMESTAMP))::int END) "
                 f"WHERE request_id = {request_id} AND state = 'running'"
             )
             return json_response(200, {'ok': True})
@@ -552,12 +622,18 @@ def handler(event: dict, context) -> dict:
             if action == 'stop':
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET state = 'stopped', "
-                    f"stopped_at = CURRENT_TIMESTAMP WHERE id = {campaign_id}"
+                    f"stopped_at = CURRENT_TIMESTAMP, paused_until = NULL, "
+                    f"time_left_seconds = GREATEST(0, CASE WHEN expires_at IS NULL THEN NULL "
+                    f"  ELSE EXTRACT(EPOCH FROM (expires_at - CURRENT_TIMESTAMP))::int END) "
+                    f"WHERE id = {campaign_id}"
                 )
             else:
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET state = 'running', stopped_at = NULL, "
-                    f"fail_streak = 0, last_error = NULL, next_run_at = CURRENT_TIMESTAMP "
+                    f"fail_streak = 0, last_error = NULL, next_run_at = CURRENT_TIMESTAMP, "
+                    f"paused_until = NULL, time_left_seconds = NULL, "
+                    f"expires_at = CASE WHEN time_left_seconds IS NULL THEN expires_at "
+                    f"  ELSE CURRENT_TIMESTAMP + (time_left_seconds || ' seconds')::interval END "
                     f"WHERE id = {campaign_id}"
                 )
             return json_response(200, {'ok': True})
@@ -639,6 +715,38 @@ def handler(event: dict, context) -> dict:
                         )
                     except Exception:
                         pass
+            return json_response(200, {'ok': True})
+
+        if action == 'reject_renew':
+            request_id = int(body.get('request_id', 0))
+            reason = esc(body.get('reason', ''))[:300]
+
+            cur.execute(
+                f"UPDATE {schema}.ad_requests SET renew_plan = NULL, renew_at = NULL, "
+                f"renew_method = NULL WHERE id = {request_id} "
+                f"RETURNING client_chat_id, public_token, city"
+            )
+            info = cur.fetchone()
+            token_bot = os.environ.get('TELEGRAM_BOT_TOKEN')
+            site = os.environ.get('SITE_URL', '').rstrip('/')
+            if info and info[0] and token_bot:
+                tail = f'\nПричина: {reason}' if reason else ''
+                msg = (f'Оплата за объявление ({info[2]}) не найдена, заявка на продление '
+                       f'отменена.{tail}\n\nПроверьте перевод и оформите заявку заново.')
+                params = {'chat_id': info[0], 'text': msg}
+                if site and info[1]:
+                    params['reply_markup'] = json.dumps({'inline_keyboard': [[{
+                        'text': 'Открыть личный кабинет',
+                        'url': f'{site}/status/{info[1]}',
+                    }]]})
+                try:
+                    call_telegram(token_bot, 'sendMessage', params, budget=5.0)
+                    cur.execute(
+                        f"INSERT INTO {schema}.client_messages (request_id, direction, text) "
+                        f"VALUES ({request_id}, 'out', '{esc(msg)}')"
+                    )
+                except Exception:
+                    pass
             return json_response(200, {'ok': True})
 
         if action == 'save_group':

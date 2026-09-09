@@ -5,6 +5,7 @@ import RequestCard from '@/components/admin/RequestCard';
 import GroupsTab from '@/components/admin/GroupsTab';
 import ScheduleInfo from '@/components/admin/ScheduleInfo';
 import ChatsTab from '@/components/admin/ChatsTab';
+import FinanceTab from '@/components/admin/FinanceTab';
 import { AdRequest, CityGroup } from '@/components/admin/types';
 
 const FILTERS = [
@@ -22,7 +23,9 @@ const Admin = () => {
   const [requests, setRequests] = useState<AdRequest[]>([]);
   const [groups, setGroups] = useState<CityGroup[]>([]);
   const [heartbeat, setHeartbeat] = useState<{ last_run_at: string | null; minutes_ago: number | null } | null>(null);
-  const [tab, setTab] = useState<'requests' | 'chats' | 'groups' | 'schedule'>('requests');
+  const [tab, setTab] = useState<
+    'requests' | 'chats' | 'finance' | 'groups' | 'schedule'
+  >('requests');
   const [filter, setFilter] = useState('new');
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -268,7 +271,7 @@ const Admin = () => {
         </div>
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          {(['requests', 'chats', 'groups', 'schedule'] as const).map((t) => (
+          {(['requests', 'chats', 'finance', 'groups', 'schedule'] as const).map((t) => (
             <button
               key={t}
               className={t === tab ? 'btn btn-primary' : 'btn btn-ghost'}
@@ -279,9 +282,11 @@ const Admin = () => {
                 ? 'Заявки'
                 : t === 'chats'
                   ? `Чаты${stats.unread > 0 ? ` · ${stats.unread}` : ''}`
-                  : t === 'groups'
-                    ? 'Города и группы'
-                    : 'Расписание'}
+                  : t === 'finance'
+                    ? 'Финансы'
+                    : t === 'groups'
+                      ? 'Города и группы'
+                      : 'Расписание'}
             </button>
           ))}
         </div>
@@ -329,6 +334,10 @@ const Admin = () => {
           </>
         ) : tab === 'chats' ? (
           <ChatsTab password={password} onRefresh={() => load(password, true)} />
+        ) : tab === 'finance' ? (
+          <div className="mt-6">
+            <FinanceTab password={password} />
+          </div>
         ) : tab === 'groups' ? (
           <div className="mt-6">
             <GroupsTab groups={groups} busy={busy} onAction={act} />

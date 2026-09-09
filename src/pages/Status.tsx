@@ -34,8 +34,18 @@ interface StatusData {
     expires_at: string | null;
     interval_minutes: number;
     paused_until: string | null;
+    time_left_seconds: number | null;
   } | null;
 }
+
+const leftLabel = (seconds: number) => {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days} дн. ${hours} ч.`;
+  if (hours > 0) return `${hours} ч. ${mins} мин.`;
+  return `${mins} мин.`;
+};
 
 const PAUSE_OPTIONS = [
   { label: '2 часа', hours: 2 },
@@ -379,7 +389,7 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
                       disabled={busy}
                       onClick={() => act({ action: 'stop' })}
                     >
-                      Остановить совсем
+                      Остановить показы
                     </button>
                   </div>
                 ) : (
@@ -431,9 +441,33 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
                 )}
               </>
             ) : (
-              <p className="text-sm" style={{ color: 'var(--hero-muted)' }}>
-                Показы остановлены. Чтобы возобновить, напишите нам в Telegram.
-              </p>
+              <>
+                <div className="flex items-start gap-3" style={{ color: 'var(--hero-muted)' }}>
+                  <Icon name="Square" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span className="text-sm">
+                    Показы остановлены, оплаченное время не тратится.
+                    {c.time_left_seconds && c.time_left_seconds > 0
+                      ? ` В запасе ${leftLabel(c.time_left_seconds)} — они сохранятся
+                         до возобновления.`
+                      : ''}
+                  </span>
+                </div>
+                {c.time_left_seconds && c.time_left_seconds > 0 ? (
+                  <button
+                    className="btn btn-primary"
+                    disabled={busy}
+                    style={{ alignSelf: 'flex-start' }}
+                    onClick={() => act({ action: 'restart' })}
+                  >
+                    <Icon name="Play" size={15} />
+                    {busy ? 'Запускаем...' : 'Возобновить показы'}
+                  </button>
+                ) : (
+                  <span className="text-sm" style={{ color: 'var(--hero-muted)' }}>
+                    Оплаченное время закончилось — продлите тариф, чтобы вернуть показы.
+                  </span>
+                )}
+              </>
             )}
 
             {error && (

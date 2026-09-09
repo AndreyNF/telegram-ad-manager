@@ -174,23 +174,40 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
           <span className="text-sm" style={{ color: 'var(--hero-muted)' }}>
             {formatDate(item.renew.created_at)}
           </span>
-          {c && (
+          <div className="flex flex-wrap gap-2" style={{ marginLeft: 'auto' }}>
+            {c && (
+              <button
+                className="btn btn-primary"
+                disabled={busy}
+                style={{ padding: '9px 18px', fontSize: '0.72em' }}
+                onClick={() =>
+                  onAction({
+                    action: 'extend',
+                    campaign_id: c.id,
+                    days: renewPlan.days,
+                    amount: renewPlan.price,
+                  })
+                }
+              >
+                Оплата пришла
+              </button>
+            )}
             <button
-              className="btn btn-primary"
+              className="btn btn-ghost"
               disabled={busy}
-              style={{ padding: '9px 18px', fontSize: '0.72em', marginLeft: 'auto' }}
-              onClick={() =>
-                onAction({
-                  action: 'extend',
-                  campaign_id: c.id,
-                  days: renewPlan.days,
-                  amount: renewPlan.price,
-                })
-              }
+              style={{ padding: '9px 18px', fontSize: '0.72em' }}
+              onClick={() => {
+                const reason = window.prompt(
+                  'Причина отмены (покажем клиенту, можно оставить пустым):',
+                  'Оплата не поступила',
+                );
+                if (reason === null) return;
+                onAction({ action: 'reject_renew', request_id: item.id, reason });
+              }}
             >
-              Подтвердить продление
+              Оплаты нет
             </button>
-          )}
+          </div>
         </div>
       )}
 
