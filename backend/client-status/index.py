@@ -89,7 +89,8 @@ def notify_admin_edit(city: str, request_id: int) -> None:
         pass
 
 
-def notify_admin_renew(city: str, request_id: int, plan_label: str, price: int) -> None:
+def notify_admin_renew(city: str, request_id: int, plan_label: str, price: int,
+                       pay_method: str = 'manual') -> None:
     """Сообщает админу, что клиент хочет продлить показы"""
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     chat_id = os.environ.get('TELEGRAM_ADMIN_CHAT_ID')
@@ -97,12 +98,18 @@ def notify_admin_renew(city: str, request_id: int, plan_label: str, price: int) 
         return
     site = os.environ.get('SITE_URL', '').rstrip('/')
     link = f"\n{site}/admin" if site else ''
+    if pay_method == 'anaton':
+        head = f"Оплата монетой ANATON #{request_id} ({city})"
+        note = "Клиент сообщил, что перевёл монеты. Проверьте поступление и подтвердите."
+    else:
+        head = f"Заявка на продление #{request_id} ({city})"
+        note = "Подтвердите продление в админке."
     try:
         call_telegram(token, 'sendMessage', {
             'chat_id': chat_id,
-            'text': f"Заявка на продление #{request_id} ({city})\n"
+            'text': f"{head}\n"
                     f"Тариф: {plan_label} — {price} ₽\n"
-                    f"Подтвердите продление в админке.{link}",
+                    f"{note}{link}",
         }, budget=4.0)
     except Exception:
         pass
@@ -219,18 +226,22 @@ def handler(event: dict, context) -> dict:
                 if plan not in PLANS:
                     return json_response(400, {'error': 'Выберите тариф'})
 
+                method_raw = (body.get('method') or '').strip().lower()
+                pay_method = 'anaton' if method_raw == 'anaton' else 'manual'
+
                 cur.execute(
                     f"UPDATE {schema}.ad_requests SET renew_plan = '{plan}', "
+                    f"renew_method = '{pay_method}', "
                     f"renew_at = CURRENT_TIMESTAMP WHERE id = {int(row[0])}"
                 )
                 label, price, _ = PLANS[plan]
-                notify_admin_renew(row[1], row[0], label, price)
+                notify_admin_renew(row[1], row[0], label, price, pay_method)
                 return json_response(200, {'ok': True})
 
             if action == 'cancel_renew':
                 cur.execute(
-                    f"UPDATE {schema}.ad_requests SET renew_plan = NULL, renew_at = NULL "
-                    f"WHERE id = {int(row[0])}"
+                    f"UPDATE {schema}.ad_requests SET renew_plan = NULL, renew_at = NULL, "
+                    f"renew_method = NULL WHERE id = {int(row[0])}"
                 )
                 return json_response(200, {'ok': True})
 

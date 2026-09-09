@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { API, formatDate } from '@/lib/api';
 import { PLANS } from './Pricing';
+import AnatonPay from './AnatonPay';
 
 interface Props {
   currentPlan: string | null;
@@ -57,8 +58,8 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
         </div>
         <p className="text-sm" style={{ color: 'var(--hero-muted)' }}>
           Заявка от {formatDate(renew.created_at)}. Тариф: {chosen?.title || renew.plan}
-          {chosen ? ` — ${chosen.price.toLocaleString('ru-RU')} ₽` : ''}. Мы свяжемся с вами
-          в Telegram для оплаты.
+          {chosen ? ` — ${chosen.price.toLocaleString('ru-RU')} ₽` : ''}. Проверяем поступление
+          оплаты — свяжемся с вами в Telegram.
         </p>
         <button
           className="btn btn-ghost"
@@ -125,6 +126,8 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
       <p className="text-xs" style={{ color: 'var(--hero-muted)' }}>
         Оплата картой или через СБП — показы продлятся автоматически сразу после платежа.
       </p>
+
+      <AnatonPay plan={plan} busy={busy} onAction={onAction} />
     </div>
   );
 };

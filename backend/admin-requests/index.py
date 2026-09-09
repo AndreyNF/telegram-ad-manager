@@ -141,7 +141,7 @@ def list_data(cur, schema: str) -> dict:
         f"r.pref_start_hour, r.pref_end_hour, r.public_token, r.photo_url, r.client_notified, "
         f"r.client_chat_id, r.pending_ad_text, r.pending_photo_url, r.pending_photo_clear, "
         f"r.pending_at, r.client_name, r.client_username, r.plan, "
-        f"r.renew_plan, r.renew_at, "
+        f"r.renew_plan, r.renew_at, r.renew_method, "
         f"c.id, c.state, c.posts_sent, c.last_sent_at, c.last_error, c.expires_at, "
         f"c.interval_minutes, c.window_start_hour, c.window_end_hour, c.paused_until, "
         f"c.price_amount, c.paid_at, c.days_paid, c.tz_offset, "
@@ -180,25 +180,26 @@ def list_data(cur, schema: str) -> dict:
             'renew': None if row[20] is None else {
                 'plan': row[19],
                 'created_at': row[20],
+                'method': row[21] or 'manual',
             },
-            'campaign': None if row[21] is None else {
-                'id': row[21],
-                'state': row[22],
-                'posts_sent': row[23],
-                'last_sent_at': row[24],
-                'last_error': row[25],
-                'expires_at': row[26],
-                'interval_minutes': row[27],
-                'window_start_hour': row[28],
-                'window_end_hour': row[29],
-                'paused_until': row[30],
-                'price_amount': float(row[31]) if row[31] is not None else None,
-                'paid_at': row[32],
-                'days_paid': row[33],
-                'tz_offset': row[34],
+            'campaign': None if row[22] is None else {
+                'id': row[22],
+                'state': row[23],
+                'posts_sent': row[24],
+                'last_sent_at': row[25],
+                'last_error': row[26],
+                'expires_at': row[27],
+                'interval_minutes': row[28],
+                'window_start_hour': row[29],
+                'window_end_hour': row[30],
+                'paused_until': row[31],
+                'price_amount': float(row[32]) if row[32] is not None else None,
+                'paid_at': row[33],
+                'days_paid': row[34],
+                'tz_offset': row[35],
             },
-            'total_paid': float(row[35] or 0),
-            'unread': int(row[36] or 0),
+            'total_paid': float(row[36] or 0),
+            'unread': int(row[37] or 0),
         })
 
     cur.execute(
@@ -610,8 +611,8 @@ def handler(event: dict, context) -> dict:
                         f"({campaign_id}, {request_id}, {amount}, {days}, 'extend', '{note}')"
                     )
                 cur.execute(
-                    f"UPDATE {schema}.ad_requests SET renew_plan = NULL, renew_at = NULL "
-                    f"WHERE id = {request_id}"
+                    f"UPDATE {schema}.ad_requests SET renew_plan = NULL, renew_at = NULL, "
+                    f"renew_method = NULL WHERE id = {request_id}"
                 )
 
                 cur.execute(

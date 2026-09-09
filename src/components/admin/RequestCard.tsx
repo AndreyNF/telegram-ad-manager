@@ -165,9 +165,10 @@ const RequestCard = ({ item, busy, password, onAction }: Props) => {
           style={{ background: 'var(--hero-surface)', border: '1px solid var(--hero-accent)' }}
         >
           <div className="flex items-center gap-2" style={{ color: 'var(--hero-accent)' }}>
-            <Icon name="RefreshCw" size={16} />
+            <Icon name={item.renew.method === 'anaton' ? 'Coins' : 'RefreshCw'} size={16} />
             <span className="text-sm uppercase" style={{ fontFamily: 'var(--hero-font-head)' }}>
-              Просит продлить: {renewPlan.label} · {renewPlan.price.toLocaleString('ru-RU')} ₽
+              {item.renew.method === 'anaton' ? 'Оплата ANATON' : 'Просит продлить'}:{' '}
+              {renewPlan.label} · {renewPlan.price.toLocaleString('ru-RU')} ₽
             </span>
           </div>
           <span className="text-sm" style={{ color: 'var(--hero-muted)' }}>
