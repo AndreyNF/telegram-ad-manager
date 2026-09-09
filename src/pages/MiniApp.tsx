@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { API, formatDateTz, hourLabel, tzLabel } from '@/lib/api';
 import Status from './Status';
+import MiniAppPostForm from '@/components/site/MiniAppPostForm';
+import type { City } from '@/hooks/useCities';
 
 interface Ad {
   id: number;
@@ -58,45 +60,71 @@ const MiniApp = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [active, setActive] = useState('');
+  const [cities, setCities] = useState<City[]>([]);
+  const [initData, setInitData] = useState('');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     const back = getTg()?.BackButton;
     if (!back) return;
-    const handler = () => setActive('');
-    if (active) {
+    const handler = () => {
+      setActive('');
+      setCreating(false);
+    };
+    if (active || creating) {
       back.onClick(handler);
       back.show();
     } else {
       back.hide();
     }
     return () => back.offClick(handler);
-  }, [active]);
+  }, [active, creating]);
+
+  const load = (init: string) => {
+    setLoading(true);
+    fetch(API.miniapp, { headers: { 'X-Init-Data': init } })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Не удалось загрузить');
+        setAds(data.ads || []);
+        setCities(data.cities || []);
+        setName(data.user?.name || '');
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Не удалось загрузить'))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     const tg = getTg();
     tg?.ready();
     tg?.expand();
 
-    const initData = tg?.initData || '';
-    if (!initData) {
+    const init = tg?.initData || '';
+    if (!init) {
       setError('Откройте кабинет через нашего Telegram-бота');
       setLoading(false);
       return;
     }
-
-    fetch(API.miniapp, { headers: { 'X-Init-Data': initData } })
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Не удалось загрузить');
-        setAds(data.ads || []);
-        setName(data.user?.name || '');
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Не удалось загрузить'))
-      .finally(() => setLoading(false));
+    setInitData(init);
+    load(init);
   }, []);
 
   if (active) {
     return <Status tokenOverride={active} onBack={() => setActive('')} />;
+  }
+
+  if (creating) {
+    return (
+      <MiniAppPostForm
+        cities={cities}
+        initData={initData}
+        onCancel={() => setCreating(false)}
+        onDone={() => {
+          setCreating(false);
+          load(initData);
+        }}
+      />
+    );
   }
 
 
@@ -132,8 +160,16 @@ const MiniApp = () => {
       )}
 
       {!error && ads.length === 0 && (
-        <div className="card text-center text-sm" style={{ color: 'var(--hero-muted)' }}>
-          Объявлений пока нет. Отправьте боту команду /post — и подадим первое.
+        <div className="card flex flex-col items-center gap-4 text-center">
+          <Icon name="Megaphone" size={30} style={{ color: 'var(--hero-accent)' }} />
+          <span className="text-sm" style={{ color: 'var(--hero-muted)' }}>
+            Объявлений пока нет. Подайте первое — модератор проверит текст
+            и запустит показы.
+          </span>
+          <button className="btn btn-primary" onClick={() => setCreating(true)}>
+            <Icon name="Plus" size={15} />
+            Подать объявление
+          </button>
         </div>
       )}
 
@@ -206,6 +242,16 @@ const MiniApp = () => {
           );
         })}
       </div>
+
+      {!error && ads.length > 0 && (
+        <button
+          className="btn btn-ghost mt-5 w-full"
+          onClick={() => setCreating(true)}
+        >
+          <Icon name="Plus" size={15} />
+          Подать ещё объявление
+        </button>
+      )}
     </div>
   );
 };
