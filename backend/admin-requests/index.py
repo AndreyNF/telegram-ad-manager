@@ -586,11 +586,10 @@ def handler(event: dict, context) -> dict:
                 f"INSERT INTO {schema}.campaigns "
                 f"(request_id, city, interval_minutes, state, next_run_at, days_paid, expires_at, "
                 f"window_start_hour, window_end_hour, tz_offset, price_amount, paid_at, "
-                f"payment_note, time_left_seconds, last_tick_at) VALUES "
+                f"payment_note) VALUES "
                 f"({request_id}, '{esc(city)}', {interval}, 'running', CURRENT_TIMESTAMP, {days}, "
                 f"CURRENT_TIMESTAMP + INTERVAL '{days} days', {win_start}, {win_end}, "
-                f"{int(tz_offset)}, {amount if amount else 'NULL'}, {paid_sql}, '{note}', "
-                f"{days} * 86400, CURRENT_TIMESTAMP) "
+                f"{int(tz_offset)}, {amount if amount else 'NULL'}, {paid_sql}, '{note}') "
                 f"RETURNING id"
             )
             campaign_id = cur.fetchone()[0]
@@ -611,8 +610,7 @@ def handler(event: dict, context) -> dict:
                 f"UPDATE {schema}.ad_requests SET status = 'rejected' WHERE id = {request_id}"
             )
             cur.execute(
-                f"UPDATE {schema}.campaigns SET state = 'stopped', stopped_at = CURRENT_TIMESTAMP, "
-                f"last_tick_at = CURRENT_TIMESTAMP "
+                f"UPDATE {schema}.campaigns SET state = 'stopped', stopped_at = CURRENT_TIMESTAMP "
                 f"WHERE request_id = {request_id} AND state = 'running'"
             )
             return json_response(200, {'ok': True})
@@ -622,17 +620,14 @@ def handler(event: dict, context) -> dict:
             if action == 'stop':
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET state = 'stopped', "
-                    f"stopped_at = CURRENT_TIMESTAMP, paused_until = NULL, "
-                    f"last_tick_at = CURRENT_TIMESTAMP WHERE id = {campaign_id}"
+                    f"stopped_at = CURRENT_TIMESTAMP, paused_until = NULL "
+                    f"WHERE id = {campaign_id}"
                 )
             else:
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET state = 'running', stopped_at = NULL, "
                     f"fail_streak = 0, last_error = NULL, next_run_at = CURRENT_TIMESTAMP, "
-                    f"paused_until = NULL, last_tick_at = CURRENT_TIMESTAMP, "
-                    f"expires_at = CURRENT_TIMESTAMP "
-                    f"  + (COALESCE(time_left_seconds, 0) || ' seconds')::interval "
-                    f"WHERE id = {campaign_id}"
+                    f"paused_until = NULL WHERE id = {campaign_id}"
                 )
             return json_response(200, {'ok': True})
 
@@ -643,9 +638,7 @@ def handler(event: dict, context) -> dict:
             minutes = int(hours * 60)
             cur.execute(
                 f"UPDATE {schema}.campaigns SET "
-                f"paused_until = CURRENT_TIMESTAMP + INTERVAL '{minutes} minutes', "
-                f"last_tick_at = CURRENT_TIMESTAMP, "
-                f"expires_at = expires_at + INTERVAL '{minutes} minutes' "
+                f"paused_until = CURRENT_TIMESTAMP + INTERVAL '{minutes} minutes' "
                 f"WHERE id = {campaign_id}"
             )
             return json_response(200, {'ok': True})
@@ -654,7 +647,6 @@ def handler(event: dict, context) -> dict:
             campaign_id = int(body.get('campaign_id', 0))
             cur.execute(
                 f"UPDATE {schema}.campaigns SET paused_until = NULL, "
-                f"last_tick_at = CURRENT_TIMESTAMP, "
                 f"next_run_at = CURRENT_TIMESTAMP WHERE id = {campaign_id}"
             )
             return json_response(200, {'ok': True})
@@ -672,11 +664,9 @@ def handler(event: dict, context) -> dict:
 
             cur.execute(
                 f"UPDATE {schema}.campaigns SET "
-                f"time_left_seconds = COALESCE(time_left_seconds, 0) + {days} * 86400, "
-                f"expires_at = CURRENT_TIMESTAMP + "
-                f"  ((COALESCE(time_left_seconds, 0) + {days} * 86400) || ' seconds')::interval, "
-                f"state = 'running', reminder_sent_at = NULL, stopped_at = NULL, "
-                f"last_tick_at = CURRENT_TIMESTAMP, next_run_at = CURRENT_TIMESTAMP, "
+                f"expires_at = GREATEST(COALESCE(expires_at, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP) "
+                f"+ INTERVAL '{days} days', state = 'running', reminder_sent_at = NULL, "
+                f"stopped_at = NULL, next_run_at = CURRENT_TIMESTAMP, "
                 f"days_paid = COALESCE(days_paid, 0) + {days}{paid_set} "
                 f"WHERE id = {campaign_id} RETURNING request_id"
             )

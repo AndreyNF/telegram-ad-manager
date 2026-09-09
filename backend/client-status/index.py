@@ -151,7 +151,7 @@ def handler(event: dict, context) -> dict:
             f"r.pending_at, r.pending_rejected_at, c.price_amount, c.days_paid, "
             f"r.renew_plan, r.renew_at, r.plan, COALESCE(c.tz_offset, g.tz_offset, 3), "
             f"COALESCE((SELECT SUM(p.amount) FROM {schema}.payments p "
-            f"          WHERE p.request_id = r.id), 0), c.time_left_seconds "
+            f"          WHERE p.request_id = r.id), 0) "
             f"FROM {schema}.ad_requests r "
             f"LEFT JOIN {schema}.campaigns c ON c.request_id = r.id AND c.state <> 'archived' "
             f"LEFT JOIN {schema}.city_groups g ON g.city = r.city "
@@ -259,30 +259,26 @@ def handler(event: dict, context) -> dict:
             if action == 'stop':
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET state = 'stopped', "
-                    f"stopped_at = CURRENT_TIMESTAMP, paused_until = NULL, "
-                    f"last_tick_at = CURRENT_TIMESTAMP "
+                    f"stopped_at = CURRENT_TIMESTAMP, paused_until = NULL "
                     f"WHERE id = {int(campaign_id)}"
                 )
                 return json_response(200, {'ok': True})
 
             if action == 'restart':
                 cur.execute(
-                    f"SELECT state, time_left_seconds FROM {schema}.campaigns "
-                    f"WHERE id = {int(campaign_id)}"
+                    f"SELECT state, expires_at > CURRENT_TIMESTAMP "
+                    f"FROM {schema}.campaigns WHERE id = {int(campaign_id)}"
                 )
                 camp = cur.fetchone()
                 if not camp or camp[0] != 'stopped':
                     return json_response(400, {'error': 'Показы не остановлены'})
-                left = int(camp[1] or 0)
-                if left <= 0:
+                if not camp[1]:
                     return json_response(400, {
-                        'error': 'Оплаченное время закончилось — продлите тариф'
+                        'error': 'Оплаченный срок закончился — продлите тариф'
                     })
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET state = 'running', stopped_at = NULL, "
                     f"paused_until = NULL, fail_streak = 0, "
-                    f"last_tick_at = CURRENT_TIMESTAMP, "
-                    f"expires_at = CURRENT_TIMESTAMP + INTERVAL '{left} seconds', "
                     f"next_run_at = CURRENT_TIMESTAMP WHERE id = {int(campaign_id)}"
                 )
                 return json_response(200, {'ok': True})
@@ -299,9 +295,7 @@ def handler(event: dict, context) -> dict:
                 minutes = int(hours * 60)
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET "
-                    f"paused_until = CURRENT_TIMESTAMP + INTERVAL '{minutes} minutes', "
-                    f"last_tick_at = CURRENT_TIMESTAMP, "
-                    f"expires_at = expires_at + INTERVAL '{minutes} minutes' "
+                    f"paused_until = CURRENT_TIMESTAMP + INTERVAL '{minutes} minutes' "
                     f"WHERE id = {int(campaign_id)}"
                 )
                 return json_response(200, {'ok': True})
@@ -309,7 +303,6 @@ def handler(event: dict, context) -> dict:
             if action == 'resume':
                 cur.execute(
                     f"UPDATE {schema}.campaigns SET paused_until = NULL, "
-                    f"last_tick_at = CURRENT_TIMESTAMP, "
                     f"next_run_at = CURRENT_TIMESTAMP WHERE id = {int(campaign_id)}"
                 )
                 return json_response(200, {'ok': True})
@@ -347,7 +340,6 @@ def handler(event: dict, context) -> dict:
                 'expires_at': row[11],
                 'interval_minutes': row[12],
                 'paused_until': row[14],
-                'time_left_seconds': row[27],
             },
         })
     finally:

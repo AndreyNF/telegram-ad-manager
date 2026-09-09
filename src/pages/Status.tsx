@@ -34,18 +34,8 @@ interface StatusData {
     expires_at: string | null;
     interval_minutes: number;
     paused_until: string | null;
-    time_left_seconds: number | null;
   } | null;
 }
-
-const leftLabel = (seconds: number) => {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days} дн. ${hours} ч.`;
-  if (hours > 0) return `${hours} ч. ${mins} мин.`;
-  return `${mins} мин.`;
-};
 
 const PAUSE_OPTIONS = [
   { label: '2 часа', hours: 2 },
@@ -199,17 +189,11 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
             {[
               { label: 'Публикаций', value: c.posts_sent, icon: 'Send' },
               { label: 'Раз в', value: `${c.interval_minutes} мин`, icon: 'Repeat' },
-              c.state === 'running'
-                ? {
-                    label: `Действует до · ${tzLabel(data.tz_offset)}`,
-                    value: formatDateTz(c.expires_at, data.tz_offset),
-                    icon: 'CalendarClock',
-                  }
-                : {
-                    label: 'Оплаченное время',
-                    value: leftLabel(c.time_left_seconds || 0),
-                    icon: 'CalendarClock',
-                  },
+              {
+                label: `Оплачено до · ${tzLabel(data.tz_offset)}`,
+                value: formatDateTz(c.expires_at, data.tz_offset),
+                icon: 'CalendarClock',
+              },
               ...(data.total_paid > 0
                 ? [{ label: 'Оплачено', value: `${data.total_paid} ₽`, icon: 'Wallet' }]
                 : []),
@@ -359,8 +343,8 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
                 <div className="flex items-start gap-3" style={{ color: 'var(--hero-accent)' }}>
                   <Icon name="Pause" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
                   <span className="text-sm">
-                    Показы на паузе до {formatDate(c.paused_until)}. Оплаченное время
-                    заморожено — в запасе {leftLabel(c.time_left_seconds || 0)}.
+                    Показы на паузе до {formatDate(c.paused_until)}. Оплаченный срок
+                    идёт как обычно — он закончится {formatDateTz(c.expires_at, data.tz_offset)}.
                   </span>
                 </div>
                 <button
@@ -376,8 +360,8 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
             ) : isRunning ? (
               <>
                 <p className="text-sm" style={{ color: 'var(--hero-muted)' }}>
-                  Нужен перерыв? Поставьте показы на паузу — оплаченное время замирает
-                  и продолжит расходоваться только после возобновления.
+                  Нужен перерыв? Поставьте показы на паузу или остановите их совсем.
+                  Оплаченный срок при этом продолжает идти по календарю.
                 </p>
 
                 {!pauseOpen ? (
@@ -451,28 +435,20 @@ const Status = ({ tokenOverride, onBack }: StatusProps = {}) => {
                 <div className="flex items-start gap-3" style={{ color: 'var(--hero-muted)' }}>
                   <Icon name="Square" size={18} style={{ flexShrink: 0, marginTop: 2 }} />
                   <span className="text-sm">
-                    Показы остановлены, оплаченное время не тратится.
-                    {c.time_left_seconds && c.time_left_seconds > 0
-                      ? ` В запасе ${leftLabel(c.time_left_seconds)} — они сохранятся
-                         до возобновления.`
-                      : ''}
+                    Показы остановлены. Оплаченный срок продолжает идти и закончится{' '}
+                    {formatDateTz(c.expires_at, data.tz_offset)} — можно вернуть публикации
+                    в любой момент до этой даты.
                   </span>
                 </div>
-                {c.time_left_seconds && c.time_left_seconds > 0 ? (
-                  <button
-                    className="btn btn-primary"
-                    disabled={busy}
-                    style={{ alignSelf: 'flex-start' }}
-                    onClick={() => act({ action: 'restart' })}
-                  >
-                    <Icon name="Play" size={15} />
-                    {busy ? 'Запускаем...' : 'Возобновить показы'}
-                  </button>
-                ) : (
-                  <span className="text-sm" style={{ color: 'var(--hero-muted)' }}>
-                    Оплаченное время закончилось — продлите тариф, чтобы вернуть показы.
-                  </span>
-                )}
+                <button
+                  className="btn btn-primary"
+                  disabled={busy}
+                  style={{ alignSelf: 'flex-start' }}
+                  onClick={() => act({ action: 'restart' })}
+                >
+                  <Icon name="Play" size={15} />
+                  {busy ? 'Запускаем...' : 'Возобновить показы'}
+                </button>
               </>
             )}
 
