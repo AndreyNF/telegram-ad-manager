@@ -33,6 +33,11 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
         setPaying(false);
         return;
       }
+      try {
+        localStorage.setItem('postovoy_last_token', token);
+      } catch {
+        /* приватный режим браузера */
+      }
       window.location.href = data.pay_url;
     } catch {
       setPayError('Не удалось связаться с платёжной системой');
