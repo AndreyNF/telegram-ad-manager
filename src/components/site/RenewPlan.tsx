@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
-import { API, formatDate } from '@/lib/api';
+import { formatDate } from '@/lib/api';
 import { PLANS } from './Pricing';
 import AnatonPay from './AnatonPay';
 
@@ -13,38 +13,8 @@ interface Props {
   onAction: (body: Record<string, unknown>) => void;
 }
 
-const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Props) => {
+const RenewPlan = ({ currentPlan, renew, expiresAt, busy, onAction }: Props) => {
   const [plan, setPlan] = useState(currentPlan || 'week');
-  const [paying, setPaying] = useState(false);
-  const [payError, setPayError] = useState('');
-
-  const payOnline = async () => {
-    if (!token) return;
-    setPaying(true);
-    setPayError('');
-    try {
-      const res = await fetch(API.payment, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', token, plan }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.pay_url) {
-        setPayError(data.error || 'Не удалось создать платёж');
-        setPaying(false);
-        return;
-      }
-      try {
-        localStorage.setItem('postovoy_last_token', token);
-      } catch {
-        /* приватный режим браузера */
-      }
-      window.location.href = data.pay_url;
-    } catch {
-      setPayError('Не удалось связаться с платёжной системой');
-      setPaying(false);
-    }
-  };
 
   if (renew) {
     const chosen = PLANS.find((p) => p.key === renew.plan);
@@ -105,29 +75,16 @@ const RenewPlan = ({ currentPlan, renew, expiresAt, busy, token, onAction }: Pro
         ))}
       </div>
 
-      {payError && (
-        <div className="flex items-start gap-2 text-sm" style={{ color: 'var(--hero-accent)' }}>
-          <Icon name="TriangleAlert" size={15} style={{ flexShrink: 0, marginTop: 2 }} />
-          <span>{payError}</span>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          className="btn btn-primary"
-          disabled={busy || paying || !token}
-          onClick={() => payOnline()}
+      <div style={{ borderTop: '1px solid var(--hero-x-rule)', paddingTop: '1.25rem' }}>
+        <div
+          className="mb-4 flex items-center gap-2 text-sm uppercase"
+          style={{ fontFamily: 'var(--hero-font-head)' }}
         >
-          <Icon name="CreditCard" size={15} />
-          {paying ? 'Открываем оплату...' : 'Оплатить картой'}
-        </button>
+          <Icon name="Coins" size={16} style={{ color: 'var(--hero-accent)' }} />
+          Оплата монетой ANATON
+        </div>
+        <AnatonPay plan={plan} busy={busy} onAction={onAction} />
       </div>
-
-      <p className="text-xs" style={{ color: 'var(--hero-muted)' }}>
-        Оплата картой или через СБП — показы продлятся автоматически сразу после платежа.
-      </p>
-
-      <AnatonPay plan={plan} busy={busy} onAction={onAction} />
     </div>
   );
 };
