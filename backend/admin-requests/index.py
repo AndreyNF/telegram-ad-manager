@@ -776,6 +776,63 @@ def handler(event: dict, context) -> dict:
                 )
             return json_response(200, {'ok': True})
 
+        if action == 'test_group':
+            group_id = int(body.get('id', 0))
+            cur.execute(
+                f"SELECT city, chat_id FROM {schema}.city_groups WHERE id = {group_id}"
+            )
+            row = cur.fetchone()
+            if not row:
+                return json_response(404, {'error': 'Группа не найдена'})
+            city, chat_id = row[0], (row[1] or '').strip()
+            if not chat_id:
+                return json_response(400, {
+                    'error': 'ID группы не задан. Добавьте бота в группу — ID подставится сам'
+                })
+
+            token_bot = os.environ.get('TELEGRAM_BOT_TOKEN')
+            if not token_bot:
+                return json_response(400, {'error': 'Не задан токен бота'})
+
+            info = call_telegram(token_bot, 'getChat', {'chat_id': chat_id}, budget=6.0)
+            if not info.get('ok'):
+                desc = info.get('description', 'Telegram не ответил')
+                return json_response(502, {
+                    'error': f'Нет доступа к группе: {desc}'
+                })
+            chat = info.get('result', {})
+            title = chat.get('title') or city
+
+            sent = call_telegram(
+                token_bot, 'sendMessage',
+                {
+                    'chat_id': chat_id,
+                    'text': f'Проверка связи: бот на месте и готов публиковать объявления '
+                            f'города {city}. Это служебное сообщение, его можно удалить.',
+                    'disable_web_page_preview': True,
+                },
+                budget=8.0,
+            )
+            if not sent.get('ok'):
+                desc = sent.get('description', 'не удалось отправить сообщение')
+                return json_response(502, {
+                    'error': f'Бот в группе, но писать не может: {desc}'
+                })
+
+            members = 0
+            counted = call_telegram(
+                token_bot, 'getChatMemberCount', {'chat_id': chat_id}, budget=5.0
+            )
+            if counted.get('ok'):
+                members = int(counted.get('result') or 0)
+
+            return json_response(200, {
+                'ok': True,
+                'title': title,
+                'members': members,
+                'message': f'Всё работает: сообщение ушло в «{title}»',
+            })
+
         if action == 'toggle_group':
             group_id = int(body.get('id', 0))
             cur.execute(

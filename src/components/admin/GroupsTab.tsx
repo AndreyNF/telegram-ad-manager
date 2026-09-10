@@ -6,7 +6,7 @@ import { CityGroup } from './types';
 interface Props {
   groups: CityGroup[];
   busy: boolean;
-  onAction: (body: Record<string, unknown>) => void;
+  onAction: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null> | void;
 }
 
 const EMPTY = {
@@ -27,10 +27,25 @@ const TZ_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 const GroupsTab = ({ groups, busy, onAction }: Props) => {
   const [draft, setDraft] = useState<CityGroup>(EMPTY);
+  const [checking, setChecking] = useState(0);
+  const [results, setResults] = useState<Record<number, string>>({});
 
   const save = () => {
     onAction({ action: 'save_group', ...draft, id: draft.id || undefined });
     setDraft(EMPTY);
+  };
+
+  const testGroup = async (id: number) => {
+    setChecking(id);
+    setResults({ ...results, [id]: '' });
+    const data = await onAction({ action: 'test_group', id });
+    setChecking(0);
+    if (data && typeof data.message === 'string') {
+      const members = typeof data.members === 'number' && data.members > 0
+        ? ` · подписчиков: ${data.members.toLocaleString('ru-RU')}`
+        : '';
+      setResults((prev) => ({ ...prev, [id]: `${data.message}${members}` }));
+    }
   };
 
   return (
@@ -178,7 +193,26 @@ const GroupsTab = ({ groups, busy, onAction }: Props) => {
                 <Icon name="ShieldCheck" size={14} />
                 {g.auto_clean ? 'Выключить чистку' : 'Чистить чужие'}
               </button>
+              <button
+                className="btn btn-ghost"
+                disabled={busy || checking === g.id}
+                style={{ padding: '8px 16px', fontSize: '0.72em' }}
+                onClick={() => testGroup(g.id)}
+              >
+                <Icon name="Plug" size={14} />
+                {checking === g.id ? 'Проверяем...' : 'Проверить связь'}
+              </button>
             </div>
+
+            {results[g.id] && (
+              <div
+                className="flex items-start gap-2 text-sm"
+                style={{ color: 'var(--hero-x-quarter)' }}
+              >
+                <Icon name="CircleCheck" size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+                <span>{results[g.id]}</span>
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -76,7 +76,7 @@ const Admin = () => {
   const act = async (body: Record<string, unknown>) => {
     if (body.action === 'refresh') {
       await load(password, true);
-      return;
+      return null;
     }
     setBusy(true);
     setError('');
@@ -89,8 +89,10 @@ const Admin = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Не удалось выполнить');
       await load(password);
+      return data as Record<string, unknown>;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось выполнить');
+      return null;
     } finally {
       setBusy(false);
     }
